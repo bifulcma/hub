@@ -22,6 +22,9 @@ export interface Impostazioni {
   ponte: string;
   token: string;
   linguaTraduzione?: Lingua;
+  ia?: 'nemotron' | 'claude';
+  waUrl?: string;
+  waToken?: string;
 }
 
 export interface Stato {
@@ -67,7 +70,7 @@ export function statoIniziale(): Stato {
         'Al momento non sono disponibile, la ricontatto appena possibile.',
       ].map(pronto),
     },
-    impostazioni: { ponte: PONTE_PREDEFINITO, token: '' },
+    impostazioni: { ponte: PONTE_PREDEFINITO, token: '', ia: 'nemotron', waUrl: '', waToken: '' },
   };
 }
 
@@ -96,6 +99,9 @@ export function normalizza(raw: unknown): Stato {
       linguaTraduzione: (['it', 'de', 'fr', 'es', 'en'] as string[]).includes(obj(r.impostazioni).linguaTraduzione as string)
         ? (obj(r.impostazioni).linguaTraduzione as Lingua)
         : 'de',
+      ia: obj(r.impostazioni).ia === 'claude' ? 'claude' : 'nemotron',
+      waUrl: typeof obj(r.impostazioni).waUrl === 'string' ? (obj(r.impostazioni).waUrl as string) : '',
+      waToken: typeof obj(r.impostazioni).waToken === 'string' ? (obj(r.impostazioni).waToken as string) : '',
     },
   };
   for (const id of ids) {

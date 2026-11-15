@@ -100,7 +100,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 .schede {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: rgba(250, 247, 242, 0.96); backdrop-filter: blur(10px);
   border-top: 1px solid var(--bordo); padding: 0 max(0px, calc((100vw - 720px) / 2)) env(safe-area-inset-bottom);
 }
@@ -124,3 +124,24 @@ button:disabled { opacity: 0.45; cursor: default; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 30; background: var(--testo); color: #fff; padding: 12px 18px; border-radius: 12px; font-size: 15px; max-width: 90vw; }
 .toast-azione { bottom: calc(140px + env(safe-area-inset-bottom)); display: flex; gap: 12px; align-items: center; }
 .toast-azione button { background: var(--terracotta); color: #fff; border: 0; border-radius: 10px; min-height: 40px; padding: 0 14px; font-weight: 600; }
+
+.seg.scelta.attivo { background: var(--terracotta); color: #fff; }
+.scelta-ia { margin: 0; max-width: 420px; }
+.lista-chat { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 2px; }
+.riga-chat { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--bordo); padding: 12px 4px; min-height: 64px; }
+.avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; background: var(--salvia); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 18px; }
+.corpo-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nome-chat { font-weight: 600; font-size: 17px; }
+.ultimo { color: var(--testo-2); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.riga-chat .ora { flex: none; color: var(--testo-2); font-size: 13px; }
+.testa-chat { margin-top: 0; }
+.testa-chat h1 { margin: 0; font-size: 22px; }
+.bolle { display: flex; flex-direction: column; gap: 6px; margin: 14px 0; padding: 12px; background: #f1ebe1; border-radius: 12px; max-height: 46vh; overflow-y: auto; }
+.bolla { max-width: 82%; padding: 8px 12px 18px; border-radius: 14px; font-size: 16px; line-height: 1.35; position: relative; white-space: pre-wrap; word-wrap: break-word; }
+.bolla.sua { align-self: flex-start; background: #fff; border: 1px solid var(--bordo); }
+.bolla.mia { align-self: flex-end; background: #e3eedf; }
+.bolla .ora { position: absolute; right: 10px; bottom: 3px; font-size: 11px; color: var(--testo-2); }
+.conferma { background: #f6ead2; border-radius: 12px; padding: 12px; margin-top: 14px; text-align: center; }
+.conferma p { margin: 0 0 4px; font-size: 17px; }
+.conferma .riga { justify-content: center; }
+.schede button span { font-size: 12px; }

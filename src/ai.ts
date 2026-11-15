@@ -91,6 +91,16 @@ export function promptRispondi(p: Profilo, ricevuto: string, intenzione: string)
   return { system, prompt };
 }
 
+/** Proposte di risposta dentro una chat vera: si dà la conversazione recente. */
+export function promptChat(p: Profilo, nomeContatto: string, conversazione: string, intenzione: string) {
+  const { system } = promptRispondi(p, '', '');
+  const prompt =
+    `Conversazione recente con ${nomeContatto} (dal più vecchio al più recente):\n"""\n${conversazione.trim()}\n"""\n` +
+    'Proponi la prossima risposta di Marco, coerente con la conversazione.\n' +
+    (intenzione.trim() ? `Cosa vuole rispondere Marco: ${intenzione.trim()}\n` : 'Marco non ha indicato cosa rispondere: proponi risposte prudenti.\n');
+  return { system, prompt };
+}
+
 export type AzioneScrivi = 'correggi' | 'gentile' | 'formale' | 'breve' | 'chiaro' | 'traduci' | 'elenco';
 
 export const AZIONI: { id: AzioneScrivi; etichetta: string }[] = [

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { askConRiprova, leggiRisposte, promptRispondi, promptScrivi, pulisciTesto, erroreSemplice } from './ai';
+import { askConRiprova, leggiRisposte, promptChat, promptRispondi, promptScrivi, pulisciTesto, erroreSemplice } from './ai';
 import { condividi, copia } from './invio';
+import { chiediIA, contesto, iaPronta, leggiCollegamento, nomeIA, waInvia } from './wa';
 import { esporta, importa, normalizza, ordinaPronti, ponteValido, statoIniziale } from './store';
 import { askBridge, BridgeError, parseBridgeSseStream, provaPonte } from './ponte';
 
@@ -189,6 +190,55 @@ describe('ponte SSE e askBridge', () => {
     expect(f.mock.calls[0][0]).toBe('https://p/ask');
     expect(f.mock.calls[0][1].headers.Authorization).toBe('Bearer t');
     expect(JSON.parse(f.mock.calls[0][1].body)).toMatchObject({ provider: 'claude', system: 's', web: false });
+  });
+});
+
+describe('wa (Mac mini)', () => {
+  const imp = { ...statoIniziale().impostazioni, waUrl: 'https://mini.ts.net:8445/', waToken: 'T' };
+  it('leggiCollegamento dal link della pagina collega', () => {
+    expect(leggiCollegamento('#/impostazioni?wa=' + encodeURIComponent('https://m:8445') + '&watoken=abc')).toEqual({ waUrl: 'https://m:8445', waToken: 'abc' });
+    expect(leggiCollegamento('#/impostazioni?wa=http%3A%2F%2Fm&watoken=abc')).toBeNull();
+    expect(leggiCollegamento('#/impostazioni')).toBeNull();
+  });
+  it('con WhatsApp collegato e Nemotron scelto, l’IA passa dal Mini e non da Claude', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ testo: 'ciao' }) });
+    await expect(chiediIA(imp, { system: 's', prompt: 'p', json: true }, f as never)).resolves.toBe('ciao');
+    expect(f.mock.calls[0][0]).toBe('https://mini.ts.net:8445/ai');
+    expect(f.mock.calls[0][1].headers.Authorization).toBe('Bearer T');
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ system: 's', prompt: 'p', json: true });
+  });
+  it('con Claude scelto va al ponte', async () => {
+    const f = vi.fn().mockResolvedValue(new Response('event: text\ndata: {"t":"ok"}\n\n'));
+    await expect(chiediIA({ ...imp, ia: 'claude', token: 'x' }, { system: 's', prompt: 'p' }, f as never)).resolves.toBe('ok');
+    expect(f.mock.calls[0][0]).toMatch(/\/ask$/);
+  });
+  it('iaPronta e nomeIA', () => {
+    expect(iaPronta({ ...imp, waToken: '' })).toBe(false);
+    expect(iaPronta(imp)).toBe(true);
+    expect(nomeIA(imp)).toMatch(/Nemotron/);
+  });
+  it('waInvia: 401 → messaggio chiaro', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: false, status: 401, json: () => Promise.resolve({ error: 'token' }) });
+    await expect(waInvia(imp, 'j', 't', f as never)).rejects.toThrow(/password/);
+  });
+  it('waInvia: errore del Mini riportato', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: false, status: 429, json: () => Promise.resolve({ error: 'Aspetta 3 secondi' }) });
+    await expect(waInvia(imp, 'j', 't', f as never)).rejects.toThrow(/Aspetta/);
+  });
+  it('contesto: ultimi messaggi con i nomi', () => {
+    const c = { jid: 'j', nome: 'Anna', messaggi: [{ id: '1', daMe: false, testo: 'ciao', ts: 1 }, { id: '2', daMe: true, testo: 'ehi', ts: 2 }] };
+    expect(contesto(c)).toBe('Anna: ciao\nMarco: ehi');
+  });
+  it('esportazione non contiene il token di WhatsApp', () => {
+    const s = statoIniziale();
+    s.impostazioni.waToken = 'SEGRETOWA';
+    expect(esporta(s)).not.toContain('SEGRETOWA');
+  });
+  it('promptChat include conversazione e intenzione', () => {
+    const { prompt, system } = promptChat(statoIniziale().profili.personale, 'Anna', 'Anna: ciao', 'va bene');
+    expect(prompt).toMatch(/Anna: ciao/);
+    expect(prompt).toMatch(/va bene/);
+    expect(system).toMatch(/"risposte"/);
   });
 });
 
