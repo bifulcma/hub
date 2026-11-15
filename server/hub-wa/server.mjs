@@ -221,13 +221,23 @@ const nomeChat = (c) => c.nome || '+' + c.jid.replace(/@.*/, '');
 const PAGINA_COLLEGA = () => `<!doctype html><html lang=it><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>HUB — collega WhatsApp</title><style>body{font-family:-apple-system,sans-serif;background:#faf7f2;color:#2b2723;text-align:center;padding:24px;max-width:560px;margin:auto}
 img{width:min(80vw,400px);background:#fff;padding:12px;border-radius:12px}a.b{display:inline-block;background:#c96442;color:#fff;border-radius:12px;padding:14px 22px;font-size:19px;text-decoration:none;margin-top:12px}</style>
-<h1>HUB ↔ WhatsApp</h1><div id=c></div>
+<h1>HUB ↔ WhatsApp</h1><div id=c><p>Carico…</p></div>
 <script>
-async function giro(){const r=await (await fetch('collega/stato')).json();const c=document.getElementById('c');
-if(r.stato==='qr'){c.innerHTML='<p>Sul <b>telefono Personale</b>: WhatsApp → Impostazioni → <b>Dispositivi collegati</b> → <b>Collega un dispositivo</b>, poi inquadra:</p><img src="collega/qr.png?'+Date.now()+'">'}
-else if(r.stato==='collegato'){c.innerHTML='<p>✅ WhatsApp collegato a HUB ('+r.numero+').</p><p>Ultimo passo, su questo iPad:</p><a class=b href="'+r.link+'">Apri HUB e collega</a><p style="font-size:14px;color:#6b6259">Il link porta la password solo dentro HUB su questo dispositivo.</p>'}
-else if(r.stato==='uscito'){c.innerHTML='<p>WhatsApp ha scollegato HUB.</p><a class=b href="#" onclick="fetch(\'collega/nuovo\',{method:\'POST\'});return false">Nuovo QR</a>'}
-else c.innerHTML='<p>Attendo WhatsApp… ('+r.stato+')</p>';setTimeout(giro,2000)}giro();
+// Attenzione: questo testo sta dentro un template literal di Node: niente apici escapati, usa addEventListener.
+// Percorsi assoluti, niente cache, e la pagina riprova sempre: un errore di rete non la lascia bianca.
+let ultimo='';
+function mostra(chiave,html){if(chiave!==ultimo){ultimo=chiave;document.getElementById('c').innerHTML=html}}
+function nuovoQr(){const i=document.getElementById('qr');if(!i)return;const n=new Image();n.onload=()=>{i.src=n.src};n.src='/collega/qr.png?'+Date.now()}
+document.addEventListener('click',(e)=>{if(e.target&&e.target.id==='nuovo'){e.preventDefault();fetch('/collega/nuovo',{method:'POST'})}});
+async function giro(){
+try{const x=await fetch('/collega/stato',{cache:'no-store'});if(!x.ok)throw new Error('HTTP '+x.status);const r=await x.json();
+if(r.stato==='qr'){mostra('qr','<p>Sul <b>telefono Personale</b>: WhatsApp → Impostazioni → <b>Dispositivi collegati</b> → <b>Collega un dispositivo</b>, poi inquadra:</p><img id=qr alt="QR">');nuovoQr()}
+else if(r.stato==='collegato'){mostra('ok'+r.numero,'<p>✅ WhatsApp collegato a HUB ('+r.numero+').</p><p>Ultimo passo, sul dispositivo dove userai HUB (iPad o iPhone):</p><a class=b href="'+r.link+'">Apri HUB e collega</a><p style="font-size:14px;color:#6b6259">Il link porta la password solo dentro HUB su questo dispositivo.</p>')}
+else if(r.stato==='uscito'){mostra('uscito','<p>WhatsApp ha scollegato HUB.</p><a class=b id=nuovo href="#">Nuovo QR</a>')}
+else mostra('st'+r.stato,'<p>Attendo WhatsApp… ('+r.stato+')</p>')}
+catch(e){mostra('err','<p>Non riesco a raggiungere il Mac mini. Controlla che Tailscale sia acceso: riprovo da solo…</p>')}
+setTimeout(giro,2500)}
+giro();
 </script></html>`;
 
 const server = http.createServer(async (req, res) => {
