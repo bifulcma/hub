@@ -21,6 +21,11 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
         if (w.state === 'installed' && navigator.serviceWorker.controller) avvisa(w);
       });
     });
+    // Sull'iPhone l'app sulla schermata Home viene solo «risvegliata», non riaperta:
+    // ogni volta che torna in primo piano controlla se c'è una versione nuova.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
   });
   let ricaricato = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { askConRiprova, leggiRisposte, promptChat, promptRispondi, promptScrivi, pulisciTesto, erroreSemplice } from './ai';
 import { condividi, copia } from './invio';
-import { chiediIA, contesto, iaPronta, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, waInvia } from './wa';
+import { chiediIA, collegaDalMini, contesto, iaPronta, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, waInvia } from './wa';
 import { esporta, importa, normalizza, ordinaPronti, ponteValido, statoIniziale } from './store';
 import { askBridge, BridgeError, parseBridgeSseStream, provaPonte } from './ponte';
 
@@ -201,6 +201,16 @@ describe('wa (Mac mini)', () => {
     expect(leggiCollegamentoDaTesto('wa=' + encodeURIComponent('https://m:8445') + '&watoken=abc')).toEqual({ waUrl: 'https://m:8445', waToken: 'abc' });
     expect(leggiCollegamentoDaTesto('ciao')).toBeNull();
     expect(leggiCollegamentoDaTesto('')).toBeNull();
+  });
+  it('collegaDalMini: un tocco legge il link dal Mini; errori chiari', async () => {
+    const link = 'https://bifulcma.github.io/hub/#/impostazioni?wa=' + encodeURIComponent('https://m:8445') + '&watoken=abc';
+    const ok = vi.fn(async () => new Response(JSON.stringify({ stato: 'collegato', numero: '+39', link }), { status: 200 }));
+    expect(await collegaDalMini('https://m:8445/', ok as never)).toEqual({ waUrl: 'https://m:8445', waToken: 'abc' });
+    expect((ok.mock.calls[0] as unknown[])[0]).toBe('https://m:8445/collega/stato');
+    const qr = vi.fn(async () => new Response(JSON.stringify({ stato: 'qr', link: '' }), { status: 200 }));
+    await expect(collegaDalMini('https://m', qr as never)).rejects.toThrow(/QR/);
+    const giu = vi.fn(async () => { throw new TypeError('Load failed'); });
+    await expect(collegaDalMini('https://m', giu as never)).rejects.toThrow(/Tailscale/);
   });
   it('leggiCollegamento dal link della pagina collega', () => {
     expect(leggiCollegamento('#/impostazioni?wa=' + encodeURIComponent('https://m:8445') + '&watoken=abc')).toEqual({ waUrl: 'https://m:8445', waToken: 'abc' });

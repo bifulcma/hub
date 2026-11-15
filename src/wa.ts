@@ -123,3 +123,23 @@ export function leggiCollegamentoDaTesto(testo: string): { waUrl: string; waToke
   const i = t.indexOf('#');
   return leggiCollegamento(i >= 0 ? t.slice(i) : t.includes('?') ? t : '?' + t);
 }
+
+/** Indirizzo di hub-wa sul Mac mini (raggiungibile solo con Tailscale acceso). */
+export const WA_MINI = 'https://mac-mini-von-marco.tail623d1f.ts.net:8445';
+
+/** Un tocco: chiede il collegamento direttamente al Mac mini (/collega/stato, aperto solo a HUB). */
+export async function collegaDalMini(base = WA_MINI, f: typeof fetch = fetch): Promise<{ waUrl: string; waToken: string }> {
+  let r: Response;
+  try {
+    r = await f(base.replace(/\/+$/, '') + '/collega/stato', { cache: 'no-store' });
+  } catch {
+    throw new WaErrore('Non raggiungo il Mac mini: accendi Tailscale su questo dispositivo e riprova.');
+  }
+  if (!r.ok) throw new WaErrore('Il Mac mini risponde con un errore (' + r.status + ').', r.status);
+  const d = (await r.json()) as { stato?: string; link?: string };
+  if (d.stato === 'qr') throw new WaErrore('WhatsApp non è ancora collegato al Mac mini: serve inquadrare il QR (pagina «collega»).');
+  if (d.stato !== 'collegato') throw new WaErrore('WhatsApp sul Mac mini non è pronto (' + (d.stato || '?') + '). Riprova tra poco.');
+  const wa = leggiCollegamentoDaTesto(d.link || '');
+  if (!wa) throw new WaErrore('Risposta del Mac mini non valida.');
+  return wa;
+}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { provaPonte } from './ponte';
-import { chiediIA, contesto, iaPronta, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, type ChatBreve, type Conversazione } from './wa';
+import { chiediIA, contesto, iaPronta, collegaDalMini, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, type ChatBreve, type Conversazione } from './wa';
 import {
   AZIONI,
   erroreSemplice,
@@ -131,7 +131,7 @@ export default function App() {
       </header>
 
       <main className="contenuto">
-        {pagina === 'chat' && <Chat stato={stato} demo={demo} apri={apriBozza} />}
+        {pagina === 'chat' && <Chat stato={stato} setStato={setStato} avvisa={avvisa} demo={demo} apri={apriBozza} />}
         {pagina === 'rispondi' && <Rispondi stato={stato} demo={demo} apri={(t) => apriBozza(t)} avvisa={avvisa} />}
         {pagina === 'scrivi' && <Scrivi stato={stato} setStato={setStato} demo={demo} apri={(t) => apriBozza(t)} avvisa={avvisa} />}
         {pagina === 'pronti' && <Pronti stato={stato} setStato={setStato} apri={(t) => apriBozza(t)} />}
@@ -186,7 +186,7 @@ function oraBreve(ts: number): string {
     : d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
 }
 
-function Chat({ stato, demo, apri }: { stato: Stato; demo: boolean; apri: (t: string, a?: { jid: string; nome: string }) => void }) {
+function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato: React.Dispatch<React.SetStateAction<Stato>>; avvisa: (t: string) => void; demo: boolean; apri: (t: string, a?: { jid: string; nome: string }) => void }) {
   const imp = stato.impostazioni;
   const [lista, setLista] = useState<ChatBreve[]>([]);
   const [aperta, setAperta] = useState<Conversazione | null>(null);
@@ -246,7 +246,7 @@ function Chat({ stato, demo, apri }: { stato: Stato; demo: boolean; apri: (t: st
       <section className="pannello">
         <h1>Chat</h1>
         <p>Qui vedrai i messaggi del tuo WhatsApp <b>Personale</b> e potrai rispondere senza copiare e incollare.</p>
-        <p>Per collegarlo vai in <a href="#/impostazioni">Impostazioni</a> → WhatsApp Personale.</p>
+        <CollegaIncolla setStato={setStato} avvisa={avvisa} />
       </section>
     );
 
@@ -735,31 +735,36 @@ function CollegaIncolla({ setStato, avvisa }: { setStato: React.Dispatch<React.S
     setStato((s) => ({ ...s, attivo: 'personale', impostazioni: { ...s.impostazioni, ...wa, ia: 'nemotron' } }));
     avvisa('✅ WhatsApp collegato a HUB');
   };
-  const incolla = async () => {
+  const [provo, setProvo] = useState(false);
+  const unTocco = async () => {
+    setProvo(true);
+    setErrore('');
     try {
-      const t = await navigator.clipboard.readText();
-      setTesto(t);
-      collega(t);
-    } catch {
-      setErrore('Non riesco a leggere gli appunti: tieni premuto nel campo qui sotto e scegli «Incolla».');
+      const wa = await collegaDalMini();
+      setStato((s) => ({ ...s, attivo: 'personale', impostazioni: { ...s.impostazioni, ...wa, ia: 'nemotron' } }));
+      avvisa('✅ WhatsApp collegato a HUB');
+    } catch (e) {
+      setErrore('❌ ' + (e instanceof Error ? e.message : String(e)));
     }
+    setProvo(false);
   };
   return (
     <>
-      <p className="nota">
-        Non collegato. Apri la pagina «collega» del Mac mini (con Tailscale acceso), inquadra il QR col telefono, poi tocca <b>«Copia link»</b> e torna qui.
-      </p>
+      <p className="nota">Non collegato. Accendi Tailscale e tocca qui:</p>
       <div className="riga">
-        <button className="primario" onClick={incolla}>Incolla link</button>
-      </div>
-      <label className="etichetta">
-        Oppure incollalo qui
-        <input value={testo} inputMode="url" autoCapitalize="off" autoCorrect="off" autoComplete="off" placeholder="https://bifulcma.github.io/hub/#/impostazioni?wa=…" onChange={(e) => setTesto(e.target.value)} />
-      </label>
-      <div className="riga">
-        <button className="secondario" disabled={!testo.trim()} onClick={() => collega(testo)}>Collega</button>
+        <button className="primario" disabled={provo} onClick={unTocco}>{provo ? 'Collego…' : 'Collega WhatsApp'}</button>
       </div>
       {errore && <p className="nota" role="alert">{errore}</p>}
+      <details>
+        <summary className="nota">Non funziona? Incolla il link a mano</summary>
+        <label className="etichetta">
+          Link dalla pagina «collega» del Mac mini («Copia link»)
+          <input value={testo} inputMode="url" autoCapitalize="off" autoCorrect="off" autoComplete="off" placeholder="https://bifulcma.github.io/hub/#/impostazioni?wa=…" onChange={(e) => setTesto(e.target.value)} />
+        </label>
+        <div className="riga">
+          <button className="secondario" disabled={!testo.trim()} onClick={() => collega(testo)}>Collega</button>
+        </div>
+      </details>
     </>
   );
 }
