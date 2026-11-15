@@ -32,3 +32,21 @@ describe('regole di invio di hub-wa', () => {
     expect(lineaDa(null)).toBe('personale');
   });
 });
+
+import { dopoChiusura } from './linee.mjs';
+describe('dopo la chiusura della connessione', () => {
+  it('subito dopo il QR (515) si ricollega, anche sul Business senza credenziali complete', () => {
+    expect(dopoChiusura({ linea: 'business', motivo: 515, spegnendo: false, haCredenziali: false })).toBe('riprova');
+  });
+  it('Business con QR mai inquadrato: si spegne', () => {
+    expect(dopoChiusura({ linea: 'business', motivo: 408, spegnendo: false, haCredenziali: false })).toBe('spento');
+  });
+  it('Business già collegato: si ricollega dopo un problema di rete', () => {
+    expect(dopoChiusura({ linea: 'business', motivo: 428, spegnendo: false, haCredenziali: true })).toBe('riprova');
+  });
+  it('logout dal telefono: uscito; «Scollega»: spento; Personale riprova sempre', () => {
+    expect(dopoChiusura({ linea: 'personale', motivo: 401, spegnendo: false, haCredenziali: true })).toBe('uscito');
+    expect(dopoChiusura({ linea: 'business', motivo: 401, spegnendo: true, haCredenziali: true })).toBe('spento');
+    expect(dopoChiusura({ linea: 'personale', motivo: 408, spegnendo: false, haCredenziali: false })).toBe('riprova');
+  });
+});

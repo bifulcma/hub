@@ -28,3 +28,17 @@ export function motivoBlocco({ linea, chat, testo, stato, ultimoInvio, ora }) {
   if (attesa > 0) return { codice: 429, errore: `Aspetta ${Math.ceil(attesa / 1000)} secondi tra un invio e l'altro.` };
   return null;
 }
+
+/**
+ * Cosa fare quando WhatsApp chiude la connessione di una linea.
+ * Attenzione: dopo aver inquadrato il QR WhatsApp chiude SEMPRE una volta (515 «restart required»)
+ * e bisogna ricollegarsi: non è un QR mancato. Con il QR, `creds.registered` resta false:
+ * per sapere se il numero è collegato si guarda `creds.me`.
+ */
+export function dopoChiusura({ linea, motivo, spegnendo, haCredenziali }) {
+  if (spegnendo) return 'spento';
+  if (motivo === 401) return 'uscito'; // DisconnectReason.loggedOut
+  if (motivo === 515) return 'riprova'; // DisconnectReason.restartRequired (anche subito dopo il QR)
+  if (!haCredenziali && linea === 'business') return 'spento'; // QR mai inquadrato: niente QR a ripetizione
+  return 'riprova';
+}

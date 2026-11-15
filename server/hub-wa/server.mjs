@@ -12,7 +12,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, appendFileSync, ren
 import path from 'node:path';
 import os from 'node:os';
 import { creaMemoria, nomeChat } from './memoria.mjs';
-import { LINEE, lineaDa, motivoBlocco } from './linee.mjs';
+import { LINEE, dopoChiusura, lineaDa, motivoBlocco } from './linee.mjs';
 
 const BASE = path.join(os.homedir(), '.hermes', 'hub-wa');
 const TOKEN_FILE = path.join(BASE, 'token');
@@ -80,19 +80,16 @@ async function avvia(L) {
     }
     if (u.connection === 'close') {
       const motivo = new Boom(u.lastDisconnect?.error)?.output?.statusCode;
-      if (L.spegnendo) {
+      const cosa = dopoChiusura({ linea: L.id, motivo, spegnendo: L.spegnendo, haCredenziali: !!state.creds.me });
+      log('chiuso ' + L.id + ' (' + motivo + ') → ' + cosa);
+      if (cosa === 'spento') {
         L.stato = 'spento';
-        return;
-      }
-      if (motivo === DisconnectReason.loggedOut) {
-        L.stato = 'uscito';
-        log('uscito ' + L.id + ' (logged out): serve un nuovo QR');
-        return; // niente riprova a vuoto: si ricollega dalla pagina /collega
-      }
-      if (!state.creds.registered && L.id === 'business') {
-        L.stato = 'spento'; // QR non inquadrato: niente QR a ripetizione, si riapre dalla pagina
         L.qr = '';
         return;
+      }
+      if (cosa === 'uscito') {
+        L.stato = 'uscito';
+        return; // niente riprova a vuoto: si ricollega dalla pagina /collega
       }
       L.stato = 'scollegato';
       setTimeout(() => avvia(L).catch((e) => log('avvio fallito ' + L.id + ' ' + e.message)), motivo === 515 ? 1000 : 5000);
