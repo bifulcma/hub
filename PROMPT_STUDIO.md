@@ -19,7 +19,7 @@ File principali:
 - `src/wa.ts` — chiamate a hub-wa (`/chats`, `/chat`, `/ai`, `/send`, `/health`) e scelta IA: **Nemotron locale** (via hub-wa → Ollama sullo Studio, `nemotron35:latest`) oppure **Claude** (via il ponte dello Studio `https://mac-studio-di-marco.tail623d1f.ts.net:8443`, endpoint `/ask`, SSE).
 - `src/store.ts` — dati solo in localStorage; l'esportazione non contiene mai i token.
 - `public/sw.js` — service worker con `VERSION` (alzala a ogni pubblicazione: fa comparire il toast «Aggiorna»).
-- `server/hub-wa/` — COPIA del servizio che gira sul **Mac mini** (`~/hub-wa/server.mjs`, Baileys, porta 127.0.0.1:8791, esposto con Tailscale Serve su `https://mac-mini-von-marco.tail623d1f.ts.net:8445`). Dallo Studio NON puoi installarlo sul Mini: se lo modifichi, committa qui e scrivi nell'esito che va copiato sul Mini e riavviato.
+- `server/hub-wa/` — COPIA del servizio che gira sul **Mac mini** (`~/hub-wa/server.mjs`, Baileys, porta 127.0.0.1:8791, esposto con Tailscale Serve su `https://mac-mini-von-marco.tail623d1f.ts.net:8445`). Dallo Studio lo aggiorni tu con `ssh mini` (in ssh usa `/usr/local/bin/node`): copia di sicurezza di `server.mjs`, `node --check`, sostituisci, poi `~/hub-wa-installa.sh` (servizio launchd `com.marco.hub-wa`). Committa anche qui.
 
 ## Regole fisse (non cambiarle)
 1. **Mai invii automatici**: un messaggio parte solo dopo «Invia a …» + «Sì, invia». Solo verso chat già presenti.
@@ -38,7 +38,7 @@ File principali:
 
 ## Stato al 15/11/2026
 - HUB 0.2.0 pubblicato, 44 test verdi.
-- hub-wa gira sul Mini (avviato a mano); Marco deve ancora: inquadrare il QR su `https://mac-mini-von-marco.tail623d1f.ts.net:8445/collega` e lanciare `~/hub-wa-installa.sh` sul Mini.
+- hub-wa gira sul Mini come servizio fisso (launchd) e WhatsApp Personale è COLLEGATO (15/11 sera). Corretta la pagina `/collega` che restava bianca (apice escapato nel template literal; test in `server/hub-wa/pagina.test.mjs`).
 - NON ancora provato su dispositivi veri: Condividi verso WhatsApp/WhatsApp Business, «Incolla e proponi», Comando rapido `comandi/Rispondi con HUB.shortcut`, chat WhatsApp vera e invio vero.
 
 ## Possibili prossimi passi (chiedi a Marco quale, proponendo il primo)
