@@ -24,7 +24,8 @@ describe('pagina /collega di hub-wa', () => {
   it('usa percorsi assoluti e riprova dopo un errore', () => {
     const html = paginaCollega();
     expect(html).toContain("fetch('/collega/stato'");
-    expect(html).toContain("'/collega/qr.png?'");
+    expect(html).toContain("'/collega/qr.png'+Q");
+    expect(html).toContain("get('linea')==='business'");
     expect(html).toContain('catch(e)');
     expect(html).toContain('id=copia');
     expect(html).toContain('navigator.clipboard.writeText(linkAttuale)');

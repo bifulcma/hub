@@ -1,6 +1,8 @@
 // Stessa persona indicata col numero e col codice nascosto (@lid): una sola chat, mai «numeri strani».
 import { beforeEach, describe, expect, it } from 'vitest';
-import { _svuota, chats, imparaDaContatto, imparaLid, jidChat, nomeChat, ricorda } from './memoria.mjs';
+import { creaMemoria, nomeChat } from './memoria.mjs';
+
+let chats, imparaDaContatto, imparaLid, jidChat, ricorda;
 
 const PN = '391234567890@s.whatsapp.net';
 const LID = '219876543210987@lid';
@@ -11,7 +13,9 @@ const msg = (id, remoteJid, testo, extra = {}) => ({
   message: { conversation: testo },
 });
 
-beforeEach(() => _svuota());
+beforeEach(() => {
+  ({ chats, imparaDaContatto, imparaLid, jidChat, ricorda } = creaMemoria());
+});
 
 describe('memoria hub-wa: codice nascosto (@lid) e numero', () => {
   it('remoteJidAlt nella busta: tutto finisce nella chat col numero', () => {
@@ -58,5 +62,13 @@ describe('memoria hub-wa: codice nascosto (@lid) e numero', () => {
     imparaLid(PN, LID); // al contrario: ignorato
     expect(jidChat(PN)).toBe(PN);
     expect(chats.size).toBe(0);
+  });
+
+  it('Personale e Business hanno memorie separate', () => {
+    const altra = creaMemoria();
+    ricorda(msg('f1', PN, 'personale'));
+    altra.ricorda(msg('f2', PN, 'business'));
+    expect(chats.get(PN).messaggi.map((m) => m.testo)).toEqual(['personale']);
+    expect(altra.chats.get(PN).messaggi.map((m) => m.testo)).toEqual(['business']);
   });
 });

@@ -24,7 +24,7 @@ File principali:
 ## Regole fisse (non cambiarle)
 1. **Mai invii automatici**: un messaggio parte solo dopo «Invia a …» + «Sì, invia». Solo verso chat già presenti.
 2. **Privacy**: messaggi solo in memoria su hub-wa, mai su disco; nessun server nostro, nessuna statistica. IA predefinita = Nemotron locale. Niente provider cloud nuovi senza chiedere a Marco.
-3. **Business mai collegato** con Baileys (rischio blocco del numero). Per il Business l'unica strada futura è l'API ufficiale di Meta: proponila, non farla senza ok.
+3. **Business collegato con Baileys per scelta di Marco (15/11/2026)**: sa che il collegamento non ufficiale può far bloccare il numero e accetta il rischio (usa il Business per avere 2 numeri sul telefono, ~20 messaggi al giorno, e vuole l'inglese corretto). Regole fisse in `server/hub-wa/linee.mjs`, non allentarle senza chiederlo: solo invii dopo «Sì, invia», solo a chi ha già scritto, almeno 15 s tra invii, «Scollega Business» sempre disponibile. Strada ufficiale (Coexistence + fornitore, ~50 €/mese): vedi `STUDIO_BUSINESS_META.md`.
 4. Non toccare il ponte dello Studio (`studio-bridge`) né Ollama: usali come sono.
 5. Non scrivere token o password in chat, nei commit o nei log.
 6. Aspetto: chiaro crema/terracotta, profilo Personale verde salvia, Business blu ardesia; pensato prima per iPad (820×1180 e 1180×820), poi iPhone 390×844. Pulsanti ≥ 44 px, testi dei campi ≥ 16 px. Interfaccia tutta in italiano.
@@ -40,7 +40,7 @@ File principali:
 - HUB 0.2.0 pubblicato, 44 test verdi.
 - hub-wa gira sul Mini come servizio fisso (launchd) e WhatsApp Personale è COLLEGATO (15/11 sera, ricollegato col telefono Personale dopo un primo collegamento sbagliato col Business, subito scollegato e sessione cancellata). Le chat stanno solo in RAM: ogni riavvio di hub-wa svuota la lista e lo storico torna solo ricollegando col QR → non riavviarlo senza avvisare Marco.
 - HUB 0.2.4: «Collega WhatsApp» con un tocco (HUB legge /collega/stato dal Mini). Sull'iPhone l'icona sulla Home ha memoria separata dal browser e usa il motore di Safari: col Relay privato di iCloud acceso i nomi *.ts.net non si risolvono (Chrome invece funziona). Soluzione: Relay privato spento. Chat e invio vero provati sull'iPhone (15/11 sera).
-- Correzione «stessa persona due volte» (WhatsApp usa a volte il numero, a volte un codice nascosto @lid): pronta su `main` (`server/hub-wa/memoria.mjs` + `server.mjs`, test `memoria.test.mjs`), NON ancora sul Mini: Marco ha chiesto di installarla solo quando lo dice lui (il riavvio svuota le chat). Per installarla copiare sul Mini ENTRAMBI i file `server.mjs` e `memoria.mjs` in `~/hub-wa/`. Corretta la pagina `/collega` che restava bianca (apice escapato nel template literal; test in `server/hub-wa/pagina.test.mjs`).
+- hub-wa 2 linee (Personale + Business) e correzione «stessa persona due volte» (codice nascosto @lid) installate sul Mini il 15/11 sera: file `server.mjs`, `memoria.mjs`, `linee.mjs` (copiarli TUTTI e tre in `~/hub-wa/`). Pagina QR: `/collega` (Personale) e `/collega?linea=business`. Il Business parte solo se ha già una sessione. Corretta la pagina `/collega` che restava bianca (apice escapato nel template literal; test in `server/hub-wa/pagina.test.mjs`).
 - NON ancora provato su dispositivi veri: Condividi verso WhatsApp/WhatsApp Business, «Incolla e proponi», Comando rapido `comandi/Rispondi con HUB.shortcut`, chat WhatsApp vera e invio vero.
 
 ## Possibili prossimi passi (chiedi a Marco quale, proponendo il primo)

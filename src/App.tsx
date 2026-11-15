@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { provaPonte } from './ponte';
-import { chiediIA, contesto, iaPronta, collegaDalMini, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, type ChatBreve, type Conversazione } from './wa';
+import { chiediIA, contesto, iaPronta, collegaDalMini, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, paginaCollega, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, waScollega, type ChatBreve, type Conversazione, type Linea } from './wa';
 import {
   AZIONI,
   erroreSemplice,
@@ -68,7 +68,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [nuovaVersione, setNuovaVersione] = useState<null | (() => void)>(null);
   const [bozza, setBozza] = useState<string | null>(null); // anteprima con azioni finali
-  const [destinatario, setDestinatario] = useState<{ jid: string; nome: string } | null>(null);
+  const [destinatario, setDestinatario] = useState<Destinatario | null>(null);
   useEffect(() => {
     if (appenaCollegato) {
       appenaCollegato = false;
@@ -102,7 +102,7 @@ export default function App() {
 
   const profilo = stato.profili[stato.attivo];
   const demo = !iaPronta(stato.impostazioni);
-  const apriBozza = (t: string, a?: { jid: string; nome: string }) => {
+  const apriBozza = (t: string, a?: Destinatario) => {
     setDestinatario(a || null);
     setBozza(t);
   };
@@ -154,10 +154,10 @@ export default function App() {
           nomeProfilo={profilo.nome}
           firma={profilo.firma}
           chiudi={() => { setBozza(null); setDestinatario(null); }}
-          destinatario={destinatario && stato.attivo === 'personale' ? destinatario : null}
+          destinatario={destinatario && stato.attivo === destinatario.linea ? destinatario : null}
           inviaDiretto={async (t) => {
             if (!destinatario) return;
-            await waInvia(stato.impostazioni, destinatario.jid, t);
+            await waInvia(stato.impostazioni, destinatario.jid, t, destinatario.linea);
             avvisa('✅ Inviato a ' + destinatario.nome);
             window.dispatchEvent(new Event('hub-inviato'));
           }}
@@ -176,7 +176,8 @@ export default function App() {
   );
 }
 
-// ---------------------------------------------------------------- Chat (WhatsApp Personale via Mac mini)
+// ---------------------------------------------------------------- Chat (WhatsApp Personale e Business via Mac mini)
+type Destinatario = { jid: string; nome: string; linea: Linea };
 function oraBreve(ts: number): string {
   if (!ts) return '';
   const d = new Date(ts);
@@ -186,8 +187,10 @@ function oraBreve(ts: number): string {
     : d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
 }
 
-function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato: React.Dispatch<React.SetStateAction<Stato>>; avvisa: (t: string) => void; demo: boolean; apri: (t: string, a?: { jid: string; nome: string }) => void }) {
+function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato: React.Dispatch<React.SetStateAction<Stato>>; avvisa: (t: string) => void; demo: boolean; apri: (t: string, a?: Destinatario) => void }) {
   const imp = stato.impostazioni;
+  const linea: Linea = stato.attivo;
+  const [statoLinea, setStatoLinea] = useState('');
   const [lista, setLista] = useState<ChatBreve[]>([]);
   const [aperta, setAperta] = useState<Conversazione | null>(null);
   const [errore, setErrore] = useState('');
@@ -202,9 +205,19 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
   const aggiornaLista = async () => {
     if (!waConfigurato(imp)) return;
     try {
-      const r = await waChats(imp);
+      const r = await waChats(imp, linea);
+      if (linea !== stato.attivo) return;
       setLista(r.chats);
-      setErrore(r.stato === 'collegato' ? '' : r.stato === 'uscito' ? 'WhatsApp ha scollegato HUB: ricollegalo dalla pagina «collega» sul Mini.' : 'WhatsApp si sta collegando…');
+      setStatoLinea(r.stato);
+      setErrore(
+        r.stato === 'collegato' || r.stato === 'spento'
+          ? ''
+          : r.stato === 'uscito'
+            ? 'WhatsApp ha scollegato HUB: ricollegalo dalla pagina «collega» sul Mini.'
+            : r.stato === 'qr'
+              ? 'Aspetto che inquadri il QR sulla pagina «collega» del Mac mini.'
+              : 'WhatsApp si sta collegando…',
+      );
     } catch (e) {
       setErrore(e instanceof Error ? e.message : String(e));
     }
@@ -212,7 +225,7 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
   const aggiornaAperta = async (jid = jidAperto.current) => {
     if (!jid) return;
     try {
-      const c = await waChat(imp, jid);
+      const c = await waChat(imp, jid, linea);
       if (jidAperto.current === jid) setAperta(c);
     } catch (e) {
       setErrore(e instanceof Error ? e.message : String(e));
@@ -220,6 +233,11 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
   };
 
   useEffect(() => {
+    setLista([]);
+    setAperta(null);
+    setStatoLinea('');
+    setErrore('');
+    jidAperto.current = '';
     aggiornaLista();
     const t = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
@@ -231,22 +249,24 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
     window.addEventListener('hub-inviato', f);
     return () => { window.clearInterval(t); window.removeEventListener('hub-inviato', f); ctrl.current?.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imp.waUrl, imp.waToken]);
+  }, [imp.waUrl, imp.waToken, linea]);
 
-  if (stato.attivo === 'business')
-    return (
-      <section className="pannello">
-        <h1>Chat</h1>
-        <p>Il profilo <b>Business</b> non è collegato a HUB: per lui usa <a href="#/rispondi">Rispondi</a> e poi Condividi → WhatsApp Business.</p>
-        <p className="nota">Le chat qui sono solo quelle del WhatsApp Personale.</p>
-      </section>
-    );
   if (!waConfigurato(imp))
     return (
       <section className="pannello">
         <h1>Chat</h1>
         <p>Qui vedrai i messaggi del tuo WhatsApp <b>Personale</b> e potrai rispondere senza copiare e incollare.</p>
         <CollegaIncolla setStato={setStato} avvisa={avvisa} />
+      </section>
+    );
+  if (linea === 'business' && (statoLinea === 'spento' || statoLinea === 'uscito'))
+    return (
+      <section className="pannello">
+        <h1>Chat <span className="sotto">· WhatsApp Business</span></h1>
+        <p>Il <b>Business</b> non è collegato a HUB. Puoi sempre usare <a href="#/rispondi">Rispondi</a> e poi Condividi → WhatsApp Business.</p>
+        <p className="nota">Per collegarlo: apri la pagina qui sotto su un <b>altro schermo</b> (iPad o Mac) e inquadra il QR con <b>WhatsApp Business</b> sul telefono → Dispositivi collegati.</p>
+        <a className="bottone primario" href={paginaCollega(imp, 'business')} target="_blank" rel="noreferrer">Apri la pagina del QR Business</a>
+        <p className="nota">Collegamento non ufficiale: WhatsApp potrebbe bloccare il numero. HUB invia solo dopo «Sì, invia», solo a chi ti ha già scritto, con almeno 15 secondi tra un invio e l’altro.</p>
       </section>
     );
 
@@ -274,7 +294,7 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
     setRisposte([]);
     try {
       let l: string[];
-      if (demo) l = await demoRispondi('personale', intenzione, c.signal);
+      if (demo) l = await demoRispondi(linea, intenzione, c.signal);
       else {
         const { system, prompt } = promptChat(profilo, aperta.nome, contesto(aperta), intenzione);
         l = leggiRisposte(await chiediIA(imp, { system, prompt, json: true, signal: c.signal }));
@@ -318,11 +338,11 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
         <ul className="lista-risposte">
           {risposte.map((r, i) => (
             <li key={i}>
-              <button className="scheda" data-testid="risposta-chat" onClick={() => apri(r, { jid: aperta.jid, nome: aperta.nome })}>{r}</button>
+              <button className="scheda" data-testid="risposta-chat" onClick={() => apri(r, { jid: aperta.jid, nome: aperta.nome, linea })}>{r}</button>
             </li>
           ))}
         </ul>
-        <button className="secondario largo" onClick={() => apri('', { jid: aperta.jid, nome: aperta.nome })}>Scrivi tu la risposta</button>
+        <button className="secondario largo" onClick={() => apri('', { jid: aperta.jid, nome: aperta.nome, linea })}>Scrivi tu la risposta</button>
       </section>
     );
 
@@ -330,8 +350,9 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
   const filtrate = q ? lista.filter((c) => c.nome.toLowerCase().includes(q) || c.ultimo.toLowerCase().includes(q)) : lista;
   return (
     <section className="pannello">
-      <h1>Chat <span className="sotto">· WhatsApp Personale</span></h1>
+      <h1>Chat <span className="sotto">· WhatsApp {linea === 'business' ? 'Business' : 'Personale'}</span></h1>
       {errore && <div className="errore">{errore}</div>}
+      {linea === 'business' && <p className="nota">Business: HUB risponde solo a chi ti ha già scritto, con almeno 15 secondi tra un invio e l’altro.</p>}
       <input type="search" placeholder="Cerca" value={cerca} onChange={(e) => setCerca(e.target.value)} />
       {filtrate.length === 0 && !errore && <p className="vuoto">Ancora nessun messaggio: compariranno qui appena arrivano.</p>}
       <ul className="lista-chat">
@@ -674,6 +695,9 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
       <h2>WhatsApp Personale (Mac mini)</h2>
       <StatoWa stato={stato} setStato={setStato} avvisa={avvisa} />
 
+      <h2>WhatsApp Business (Mac mini)</h2>
+      <StatoBusiness stato={stato} avvisa={avvisa} />
+
       <h2>Claude (ponte del Mac Studio)</h2>
       <label className="etichetta">Indirizzo del ponte<input value={stato.impostazioni.ponte} inputMode="url" autoCapitalize="off" autoCorrect="off" onChange={(e) => setImp('ponte', e.target.value)} /></label>
       <label className="etichetta">Token<input type="password" value={stato.impostazioni.token} placeholder="lo stesso di Penna e Tubo" autoComplete="off" onChange={(e) => setImp('token', e.target.value)} /></label>
@@ -715,6 +739,58 @@ function StatoWa({ stato, setStato, avvisa }: { stato: Stato; setStato: React.Di
         <button className="secondario" onClick={() => { if (confirm('Scollegare WhatsApp da HUB su questo dispositivo?')) { setStato((s) => ({ ...s, impostazioni: { ...s.impostazioni, waUrl: '', waToken: '' } })); avvisa('Scollegato'); } }}>Scollega</button>
         <span data-testid="esito-wa">{esito}</span>
       </div>
+    </>
+  );
+}
+
+// Business: collegato su scelta di Marco (15/11/2026), sapendo del rischio di blocco del numero.
+function StatoBusiness({ stato, avvisa }: { stato: Stato; avvisa: (t: string) => void }) {
+  const imp = stato.impostazioni;
+  const [st, setSt] = useState<{ stato: string; numero: string } | null>(null);
+  const [errore, setErrore] = useState('');
+  const [lavoro, setLavoro] = useState(false);
+  const leggi = async () => {
+    try {
+      const r = await waSalute(imp, 'business');
+      setSt({ stato: r.stato, numero: r.numero });
+      setErrore('');
+    } catch (e) {
+      setErrore('❌ ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+  useEffect(() => {
+    if (waConfigurato(imp)) leggi();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imp.waUrl, imp.waToken]);
+  if (!waConfigurato(imp)) return <p className="nota">Collega prima il WhatsApp Personale qui sopra.</p>;
+  const scollega = async () => {
+    if (!confirm('Scollegare il WhatsApp Business da HUB? Sparisce anche da «Dispositivi collegati» sul telefono.')) return;
+    setLavoro(true);
+    try {
+      await waScollega(imp, 'business');
+      avvisa('Business scollegato da HUB');
+      await leggi();
+    } catch (e) {
+      setErrore('❌ ' + (e instanceof Error ? e.message : String(e)));
+    }
+    setLavoro(false);
+  };
+  const collegato = st?.stato === 'collegato';
+  return (
+    <>
+      <p className="nota">
+        {st === null ? 'Controllo…' : collegato ? `✅ Collegato (${st.numero})` : st.stato === 'qr' ? 'In attesa del QR.' : 'Non collegato.'}
+      </p>
+      <p className="nota">Collegamento non ufficiale: WhatsApp potrebbe bloccare il numero. HUB invia solo dopo «Sì, invia», solo a chi ti ha già scritto, con almeno 15 secondi tra un invio e l’altro.</p>
+      <div className="riga">
+        {collegato ? (
+          <button className="secondario" disabled={lavoro} onClick={scollega}>Scollega Business</button>
+        ) : (
+          <a className="bottone primario" href={paginaCollega(imp, 'business')} target="_blank" rel="noreferrer">Collega Business (QR)</a>
+        )}
+        <button className="secondario" onClick={leggi}>Aggiorna</button>
+      </div>
+      {errore && <p className="nota" role="alert">{errore}</p>}
     </>
   );
 }

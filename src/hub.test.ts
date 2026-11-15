@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { askConRiprova, leggiRisposte, promptChat, promptRispondi, promptScrivi, pulisciTesto, erroreSemplice } from './ai';
 import { condividi, copia } from './invio';
-import { chiediIA, collegaDalMini, contesto, iaPronta, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, waInvia } from './wa';
+import { chiediIA, collegaDalMini, contesto, iaPronta, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, paginaCollega, waChat, waChats, waInvia, waScollega } from './wa';
 import { esporta, importa, normalizza, ordinaPronti, ponteValido, statoIniziale } from './store';
 import { askBridge, BridgeError, parseBridgeSseStream, provaPonte } from './ponte';
 
@@ -234,13 +234,26 @@ describe('wa (Mac mini)', () => {
     expect(iaPronta(imp)).toBe(true);
     expect(nomeIA(imp)).toMatch(/Nemotron/);
   });
+  it('Business: ogni chiamata porta linea=business, il Personale resta come prima', async () => {
+    const f = vi.fn(async () => new Response(JSON.stringify({ stato: 'collegato', chats: [], ok: true }), { status: 200 }));
+    const i = { ...imp, waUrl: 'https://m:8445/' };
+    await waChats(i, 'business', undefined, f as never);
+    await waChats(i, 'personale', undefined, f as never);
+    await waChat(i, 'a@b', 'business', undefined, f as never);
+    await waInvia(i, 'a@b', 'hi', 'business', f as never);
+    await waScollega(i, 'business', f as never);
+    const urls = f.mock.calls.map((c) => (c as unknown[])[0]);
+    expect(urls).toEqual(['https://m:8445/chats?linea=business', 'https://m:8445/chats', 'https://m:8445/chat?jid=a%40b&linea=business', 'https://m:8445/send', 'https://m:8445/scollega?linea=business']);
+    expect(JSON.parse(((f.mock.calls[3] as unknown[])[1] as RequestInit).body as string)).toEqual({ jid: 'a@b', testo: 'hi', linea: 'business' });
+    expect(paginaCollega(i, 'business')).toBe('https://m:8445/collega?linea=business');
+  });
   it('waInvia: 401 → messaggio chiaro', async () => {
     const f = vi.fn().mockResolvedValue({ ok: false, status: 401, json: () => Promise.resolve({ error: 'token' }) });
-    await expect(waInvia(imp, 'j', 't', f as never)).rejects.toThrow(/password/);
+    await expect(waInvia(imp, 'j', 't', 'personale', f as never)).rejects.toThrow(/password/);
   });
   it('waInvia: errore del Mini riportato', async () => {
     const f = vi.fn().mockResolvedValue({ ok: false, status: 429, json: () => Promise.resolve({ error: 'Aspetta 3 secondi' }) });
-    await expect(waInvia(imp, 'j', 't', f as never)).rejects.toThrow(/Aspetta/);
+    await expect(waInvia(imp, 'j', 't', 'personale', f as never)).rejects.toThrow(/Aspetta/);
   });
   it('contesto: ultimi messaggi con i nomi', () => {
     const c = { jid: 'j', nome: 'Anna', messaggi: [{ id: '1', daMe: false, testo: 'ciao', ts: 1 }, { id: '2', daMe: true, testo: 'ehi', ts: 2 }] };

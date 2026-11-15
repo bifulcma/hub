@@ -62,12 +62,28 @@ async function chiama<T>(i: Impostazioni, percorso: string, opz: { metodo?: stri
   return d as T;
 }
 
-export const waSalute = (i: Impostazioni, fetchFn?: typeof fetch) => chiama<{ ok: boolean; stato: string; numero: string; modello: string }>(i, '/health', { fetchFn });
-export const waChats = (i: Impostazioni, signal?: AbortSignal, fetchFn?: typeof fetch) => chiama<{ stato: string; chats: ChatBreve[] }>(i, '/chats', { signal, fetchFn });
-export const waChat = (i: Impostazioni, jid: string, signal?: AbortSignal, fetchFn?: typeof fetch) =>
-  chiama<Conversazione>(i, '/chat?jid=' + encodeURIComponent(jid), { signal, fetchFn });
-export const waInvia = (i: Impostazioni, jid: string, testo: string, fetchFn?: typeof fetch) =>
-  chiama<{ ok: boolean }>(i, '/send', { metodo: 'POST', corpo: { jid, testo }, fetchFn });
+/** Quale numero: Personale o Business (collegato su scelta di Marco, con regole più prudenti sul Mini). */
+export type Linea = 'personale' | 'business';
+const conLinea = (percorso: string, linea: Linea = 'personale') =>
+  linea === 'business' ? percorso + (percorso.includes('?') ? '&' : '?') + 'linea=business' : percorso;
+
+export interface StatoLinea {
+  stato: string;
+  numero: string;
+}
+export const waSalute = (i: Impostazioni, linea: Linea = 'personale', fetchFn?: typeof fetch) =>
+  chiama<{ ok: boolean; stato: string; numero: string; modello: string; linee?: Record<Linea, StatoLinea> }>(i, conLinea('/health', linea), { fetchFn });
+export const waChats = (i: Impostazioni, linea: Linea = 'personale', signal?: AbortSignal, fetchFn?: typeof fetch) =>
+  chiama<{ stato: string; chats: ChatBreve[] }>(i, conLinea('/chats', linea), { signal, fetchFn });
+export const waChat = (i: Impostazioni, jid: string, linea: Linea = 'personale', signal?: AbortSignal, fetchFn?: typeof fetch) =>
+  chiama<Conversazione>(i, conLinea('/chat?jid=' + encodeURIComponent(jid), linea), { signal, fetchFn });
+export const waInvia = (i: Impostazioni, jid: string, testo: string, linea: Linea = 'personale', fetchFn?: typeof fetch) =>
+  chiama<{ ok: boolean }>(i, '/send', { metodo: 'POST', corpo: { jid, testo, linea }, fetchFn });
+/** Scollega davvero il numero dal Mini (sparisce anche da «Dispositivi collegati» sul telefono). */
+export const waScollega = (i: Impostazioni, linea: Linea, fetchFn?: typeof fetch) =>
+  chiama<{ ok: boolean; stato: string }>(i, conLinea('/scollega', linea), { metodo: 'POST', fetchFn });
+/** Pagina del Mini con il QR per collegare un numero. */
+export const paginaCollega = (i: Impostazioni, linea: Linea) => pulisci(i.waUrl || WA_MINI) + conLinea('/collega', linea);
 
 /** Chiede all'IA scelta: Nemotron locale (via Mini) oppure Claude (via ponte dello Studio). */
 export async function chiediIA(
