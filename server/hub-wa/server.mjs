@@ -11,6 +11,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, appendFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { chats, ricorda, imparaLid, imparaDaContatto, jidChat, nomeChat } from './memoria.mjs';
 
 const BASE = path.join(os.homedir(), '.hermes', 'hub-wa');
 const SESSION = path.join(BASE, 'session');
@@ -21,8 +22,6 @@ const ORIGINE = 'https://bifulcma.github.io';
 const URL_PUBBLICO = process.env.HUB_WA_URL || 'https://mac-mini-von-marco.tail623d1f.ts.net:8445';
 const OLLAMA = process.env.HUB_WA_OLLAMA || 'http://100.87.233.111:11434';
 const MODELLO = process.env.HUB_WA_MODEL || 'nemotron35:latest';
-const MAX_CHAT = 150;
-const MAX_MSG = 40;
 const PAUSA_INVIO_MS = 4000;
 
 mkdirSync(BASE, { recursive: true, mode: 0o700 });
@@ -33,49 +32,7 @@ const log = (s) => {
   try { appendFileSync(LOG, `${new Date().toISOString()} ${s}\n`); } catch {}
 };
 
-// ------------------------------------------------------------------ memoria delle chat (solo RAM)
-const chats = new Map(); // jid -> { jid, nome, messaggi: [{id, daMe, testo, ts}], ts }
-
-const chatSingola = (jid) => !!jid && (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid'));
-
-function testoDi(m) {
-  const c = m?.message;
-  if (!c) return '';
-  const x = c.ephemeralMessage?.message || c.viewOnceMessage?.message || c;
-  if (x.conversation) return x.conversation;
-  if (x.extendedTextMessage?.text) return x.extendedTextMessage.text;
-  if (x.imageMessage) return '[foto]' + (x.imageMessage.caption ? ' ' + x.imageMessage.caption : '');
-  if (x.videoMessage) return '[video]' + (x.videoMessage.caption ? ' ' + x.videoMessage.caption : '');
-  if (x.audioMessage) return '[messaggio vocale]';
-  if (x.documentMessage) return '[documento] ' + (x.documentMessage.fileName || '');
-  if (x.stickerMessage) return '[sticker]';
-  if (x.locationMessage) return '[posizione]';
-  if (x.contactMessage) return '[contatto] ' + (x.contactMessage.displayName || '');
-  return '';
-}
-
-function ricorda(m) {
-  const jid = m?.key?.remoteJid;
-  if (!chatSingola(jid)) return;
-  const testo = testoDi(m).trim();
-  if (!testo) return;
-  const ts = Number(m.messageTimestamp?.low ?? m.messageTimestamp ?? Date.now() / 1000) * 1000;
-  let c = chats.get(jid);
-  if (!c) {
-    c = { jid, nome: '', messaggi: [], ts: 0 };
-    chats.set(jid, c);
-  }
-  if (!m.key.fromMe && m.pushName) c.nome = m.pushName;
-  if (c.messaggi.some((x) => x.id === m.key.id)) return;
-  c.messaggi.push({ id: m.key.id, daMe: !!m.key.fromMe, testo: testo.slice(0, 4000), ts });
-  c.messaggi.sort((a, b) => a.ts - b.ts);
-  if (c.messaggi.length > MAX_MSG) c.messaggi.splice(0, c.messaggi.length - MAX_MSG);
-  c.ts = Math.max(c.ts, ts);
-  if (chats.size > MAX_CHAT) {
-    const vecchie = [...chats.values()].sort((a, b) => a.ts - b.ts).slice(0, chats.size - MAX_CHAT);
-    for (const v of vecchie) chats.delete(v.jid);
-  }
-}
+// ------------------------------------------------------------------ memoria delle chat (solo RAM): vedi memoria.mjs
 
 // ------------------------------------------------------------------ WhatsApp
 let sock = null;
@@ -130,25 +87,43 @@ async function avvia() {
     }
   });
   sock.ev.on('messaging-history.set', ({ chats: cs = [], contacts = [], messages = [] }) => {
-    for (const m of messages) ricorda(m);
+    for (const k of contacts) imparaDaContatto(k);
+    for (const m of messages) ricordaERisolvi(m);
     for (const k of contacts) {
-      const c = chats.get(k.id);
+      const c = chats.get(jidChat(k.id));
       if (c && !c.nome) c.nome = k.notify || k.name || '';
     }
     for (const ch of cs) {
-      const c = chats.get(ch.id);
+      const c = chats.get(jidChat(ch.id));
       if (c && !c.nome && ch.name) c.nome = ch.name;
     }
   });
   sock.ev.on('contacts.upsert', (cs) => {
     for (const k of cs) {
-      const c = chats.get(k.id);
+      imparaDaContatto(k);
+      const c = chats.get(jidChat(k.id));
       if (c && (k.name || k.notify)) c.nome = k.name || k.notify;
     }
   });
-  sock.ev.on('messages.upsert', ({ messages }) => {
-    for (const m of messages) ricorda(m);
+  sock.ev.on('lid-mapping.update', (x) => {
+    for (const { lid, pn } of Array.isArray(x) ? x : [x]) imparaLid(lid, pn);
   });
+  sock.ev.on('messages.upsert', ({ messages }) => {
+    for (const m of messages) ricordaERisolvi(m);
+  });
+}
+
+// Se una chat resta col codice nascosto, chiediamo a Baileys il numero (solo in RAM).
+const giaChiesti = new Set();
+function ricordaERisolvi(m) {
+  const jid = ricorda(m);
+  if (!jid.endsWith('@lid') || giaChiesti.has(jid)) return;
+  giaChiesti.add(jid);
+  const mappa = sock?.signalRepository?.lidMapping;
+  if (!mappa?.getPNForLID) return;
+  Promise.resolve(mappa.getPNForLID(jid))
+    .then((pn) => { if (pn) imparaLid(jid, pn); })
+    .catch(() => {});
 }
 
 // ------------------------------------------------------------------ IA locale (Nemotron sul Mac Studio)
@@ -216,7 +191,6 @@ function corpo(req) {
   });
 }
 
-const nomeChat = (c) => c.nome || '+' + c.jid.replace(/@.*/, '');
 
 const PAGINA_COLLEGA = () => `<!doctype html><html lang=it><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>HUB — collega WhatsApp</title><style>body{font-family:-apple-system,sans-serif;background:#faf7f2;color:#2b2723;text-align:center;padding:24px;max-width:560px;margin:auto}
@@ -281,7 +255,7 @@ const server = http.createServer(async (req, res) => {
       return invia(res, 200, { stato, chats: lista });
     }
     if (p === '/chat') {
-      const c = chats.get(url.searchParams.get('jid') || '');
+      const c = chats.get(jidChat(url.searchParams.get('jid') || ''));
       if (!c) return invia(res, 404, { error: 'Chat non trovata (forse è vecchia: arriverà col prossimo messaggio).' });
       return invia(res, 200, { jid: c.jid, nome: nomeChat(c), messaggi: c.messaggi });
     }
@@ -293,7 +267,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/send' && req.method === 'POST') {
       const b = await corpo(req);
-      const c = chats.get(b.jid || '');
+      const c = chats.get(jidChat(b.jid || ''));
       if (!c) return invia(res, 400, { error: 'Posso scrivere solo nelle chat già presenti in HUB.' });
       const testo = String(b.testo || '').trim();
       if (!testo) return invia(res, 400, { error: 'Messaggio vuoto' });
@@ -303,7 +277,7 @@ const server = http.createServer(async (req, res) => {
       if (attesa > 0) return invia(res, 429, { error: `Aspetta ${Math.ceil(attesa / 1000)} secondi tra un invio e l'altro.` });
       ultimoInvio = Date.now();
       const sent = await sock.sendMessage(c.jid, { text: testo });
-      if (sent) ricorda(sent);
+      if (sent) ricordaERisolvi(sent);
       log('inviato 1 messaggio'); // niente contenuto né destinatario nel registro
       return invia(res, 200, { ok: true });
     }
