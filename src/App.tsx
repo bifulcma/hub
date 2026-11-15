@@ -13,7 +13,7 @@ import {
 } from './ai';
 import { demoRispondi, demoScrivi } from './demo';
 import { condividi, copia } from './invio';
-import { carica, esporta, importa, nuovoId, ordinaPronti, salva, type Lingua, type ProfiloId, type Stato } from './store';
+import { carica, esporta, importa, nuovoId, ordinaPronti, ponteValido, salva, type Lingua, type ProfiloId, type Stato } from './store';
 
 type Pagina = 'rispondi' | 'scrivi' | 'pronti' | 'impostazioni';
 const PAGINE: Pagina[] = ['rispondi', 'scrivi', 'pronti', 'impostazioni'];
@@ -58,9 +58,11 @@ export default function App() {
     return () => window.removeEventListener('hub-aggiorna', f);
   }, []);
 
+  const timerToast = useRef<number | undefined>(undefined);
   const avvisa = (t: string) => {
     setToast(t);
-    window.setTimeout(() => setToast(''), 2200);
+    window.clearTimeout(timerToast.current);
+    timerToast.current = window.setTimeout(() => setToast(''), 2600);
   };
   const vai = (p: Pagina) => {
     location.hash = '#/' + p;
@@ -88,14 +90,14 @@ export default function App() {
         </div>
         {demo && (
           <div className="banner" data-testid="banner-demo">
-            Dimostrazione: risposte finte. Per usare Claude vai in <a href="#/impostazioni">Impostazioni</a>.
+            Modalità prova: le risposte sono esempi finti. <a href="#/impostazioni">Collega Claude</a>
           </div>
         )}
       </header>
 
       <main className="contenuto">
-        {pagina === 'rispondi' && <Rispondi stato={stato} demo={demo} apri={setBozza} />}
-        {pagina === 'scrivi' && <Scrivi stato={stato} demo={demo} apri={setBozza} avvisa={avvisa} />}
+        {pagina === 'rispondi' && <Rispondi stato={stato} demo={demo} apri={setBozza} avvisa={avvisa} />}
+        {pagina === 'scrivi' && <Scrivi stato={stato} setStato={setStato} demo={demo} apri={setBozza} avvisa={avvisa} />}
         {pagina === 'pronti' && <Pronti stato={stato} setStato={setStato} apri={setBozza} />}
         {pagina === 'impostazioni' && <Impostazioni stato={stato} setStato={setStato} avvisa={avvisa} />}
       </main>
@@ -132,7 +134,7 @@ export default function App() {
 }
 
 // ---------------------------------------------------------------- Rispondi
-function Rispondi({ stato, demo, apri }: { stato: Stato; demo: boolean; apri: (t: string) => void }) {
+function Rispondi({ stato, demo, apri, avvisa }: { stato: Stato; demo: boolean; apri: (t: string) => void; avvisa: (t: string) => void }) {
   const [ricevuto, setRicevuto] = useState('');
   const [intenzione, setIntenzione] = useState('');
   const [risposte, setRisposte] = useState<string[]>([]);
@@ -141,10 +143,20 @@ function Rispondi({ stato, demo, apri }: { stato: Stato; demo: boolean; apri: (t
   const ctrl = useRef<AbortController | null>(null);
   const profilo = stato.profili[stato.attivo];
 
+  // Cambio profilo o uscita dalla pagina: si annulla la richiesta e si tolgono le proposte del profilo vecchio.
+  useEffect(() => {
+    ctrl.current?.abort();
+    setLavoro(false);
+    setRisposte([]);
+    setErrore('');
+  }, [stato.attivo]);
+  useEffect(() => () => ctrl.current?.abort(), []);
+
   const incolla = async () => {
     try {
       const t = await navigator.clipboard.readText();
-      if (t) setRicevuto(t);
+      if (t.trim()) setRicevuto(t);
+      else avvisa('Gli appunti sono vuoti: copia prima il messaggio in WhatsApp');
     } catch {
       setErrore('Non posso leggere gli appunti: tieni premuto nella casella e scegli «Incolla».');
     }
@@ -190,10 +202,12 @@ function Rispondi({ stato, demo, apri }: { stato: Stato; demo: boolean; apri: (t
           {ricevuto && <button className="secondario" onClick={() => { setRicevuto(''); setRisposte([]); }}>Svuota</button>}
         </div>
         <label className="etichetta" htmlFor="intenzione">Cosa vuoi rispondere? <span className="facoltativo">(facoltativo)</span></label>
-        <input id="intenzione" type="text" placeholder="es. di' che va bene giovedì" value={intenzione} onChange={(e) => setIntenzione(e.target.value)} />
+        <input id="intenzione" type="text" placeholder={stato.attivo === 'business' ? "es. conferma l'appuntamento di venerdì" : "es. di' che va bene giovedì"} value={intenzione} onChange={(e) => setIntenzione(e.target.value)} />
         <button className="primario largo" data-testid="proponi" disabled={!ricevuto.trim() || lavoro} onClick={proponi}>
           Proponi risposte
         </button>
+        {!ricevuto.trim() && <p className="suggerimento">Prima incolla il messaggio che hai ricevuto.</p>}
+        {ricevuto.length > 4000 && <p className="suggerimento">Messaggio molto lungo: Claude potrebbe metterci di più.</p>}
       </div>
       <div className="pannello">
         <h2>Proposte <span className="sotto">· {profilo.nome}, {NOMI_LINGUA[profilo.lingua]}</span></h2>
@@ -208,7 +222,7 @@ function Rispondi({ stato, demo, apri }: { stato: Stato; demo: boolean; apri: (t
           </div>
         )}
         {!lavoro && !errore && risposte.length === 0 && <p className="vuoto">Incolla un messaggio e premi «Proponi risposte».</p>}
-        {risposte.length > 0 && <p className="suggerimento">Tocca una risposta per modificarla e inviarla.</p>}
+        {risposte.length > 0 && <p className="suggerimento">Tocca una risposta per rivederla e inviarla.</p>}
         <ul className="lista-risposte">
           {risposte.map((r, i) => (
             <li key={i}>
@@ -222,15 +236,23 @@ function Rispondi({ stato, demo, apri }: { stato: Stato; demo: boolean; apri: (t
 }
 
 // ---------------------------------------------------------------- Scrivi
-function Scrivi({ stato, demo, apri, avvisa }: { stato: Stato; demo: boolean; apri: (t: string) => void; avvisa: (t: string) => void }) {
+function Scrivi({ stato, setStato, demo, apri, avvisa }: { stato: Stato; setStato: React.Dispatch<React.SetStateAction<Stato>>; demo: boolean; apri: (t: string) => void; avvisa: (t: string) => void }) {
   const [testo, setTesto] = useState('');
   const [risultato, setRisultato] = useState('');
   const [precedente, setPrecedente] = useState<string | null>(null);
   const [lavoro, setLavoro] = useState<AzioneScrivi | null>(null);
   const [errore, setErrore] = useState('');
-  const [lingua, setLingua] = useState<Lingua>('de');
+  const lingua: Lingua = stato.impostazioni.linguaTraduzione || 'de';
+  const setLingua = (l: Lingua) => setStato((s) => ({ ...s, impostazioni: { ...s.impostazioni, linguaTraduzione: l } }));
   const ctrl = useRef<AbortController | null>(null);
   const profilo = stato.profili[stato.attivo];
+
+  useEffect(() => {
+    ctrl.current?.abort();
+    setLavoro(null);
+    setRisultato('');
+  }, [stato.attivo]);
+  useEffect(() => () => ctrl.current?.abort(), []);
 
   const esegui = async (azione: AzioneScrivi) => {
     if (!testo.trim()) return;
@@ -262,17 +284,18 @@ function Scrivi({ stato, demo, apri, avvisa }: { stato: Stato; demo: boolean; ap
       <div className="azioni-ia" role="toolbar" aria-label="Azioni IA">
         {AZIONI.map((a) => (
           <button key={a.id} className="chip" disabled={!testo.trim() || !!lavoro} onClick={() => esegui(a.id)} data-testid={`azione-${a.id}`}>
-            {a.etichetta}
-            {a.id === 'traduci' && (
-              <select aria-label="Lingua" value={lingua} onClick={(e) => e.stopPropagation()} onChange={(e) => setLingua(e.target.value as Lingua)}>
-                {(Object.keys(NOMI_LINGUA) as Lingua[]).map((l) => (
-                  <option key={l} value={l}>{l.toUpperCase()}</option>
-                ))}
-              </select>
-            )}
+            {a.id === 'traduci' ? `Traduci in ${NOMI_LINGUA[lingua]}` : a.etichetta}
           </button>
         ))}
       </div>
+      <label className="lingua-traduci">
+        Lingua per «Traduci»:
+        <select value={lingua} onChange={(e) => setLingua(e.target.value as Lingua)}>
+          {(Object.keys(NOMI_LINGUA) as Lingua[]).map((l) => (
+            <option key={l} value={l}>{NOMI_LINGUA[l]}</option>
+          ))}
+        </select>
+      </label>
       {lavoro && (
         <div className="pensa">
           Sto pensando… <button className="secondario piccolo" onClick={() => { ctrl.current?.abort(); setLavoro(null); }}>Annulla</button>
@@ -317,7 +340,7 @@ function Pronti({ stato, setStato, apri }: { stato: Stato; setStato: React.Dispa
               <div className="modifica">
                 <textarea rows={3} value={modifica.testo} onChange={(e) => setModifica({ ...modifica, testo: e.target.value })} />
                 <div className="riga">
-                  <button className="primario" onClick={() => { aggiorna((l) => l.map((x) => (x.id === p.id ? { ...x, testo: modifica.testo.trim() || x.testo } : x))); setModifica(null); }}>Salva</button>
+                  <button className="primario" disabled={!modifica.testo.trim()} onClick={() => { aggiorna((l) => l.map((x) => (x.id === p.id ? { ...x, testo: modifica.testo.trim() } : x))); setModifica(null); }}>Salva</button>
                   <button className="secondario" onClick={() => setModifica(null)}>Annulla</button>
                 </div>
               </div>
@@ -350,12 +373,19 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
     setStato((s) => ({ ...s, profili: { ...s.profili, [s.attivo]: { ...s.profili[s.attivo], [campo]: valore } } }));
   const setImp = (campo: 'ponte' | 'token', valore: string) => setStato((s) => ({ ...s, impostazioni: { ...s.impostazioni, [campo]: valore } }));
 
+  const [provando, setProvando] = useState(false);
   const provaConnessione = async () => {
+    if (!ponteValido(stato.impostazioni.ponte)) {
+      setProva('❌ L’indirizzo deve iniziare con https://');
+      return;
+    }
+    setProvando(true);
     setProva('Provo…');
     const r = await provaPonte(stato.impostazioni.ponte, stato.impostazioni.token);
     setProva(
       r === 'ok' ? '✅ Collegato a Claude sullo Studio' : r === 'token' ? '❌ Token sbagliato' : r === 'irraggiungibile' ? '❌ Non raggiungo il ponte: Tailscale è acceso?' : '❌ Il ponte risponde con un errore',
     );
+    setProvando(false);
   };
 
   const scarica = () => {
@@ -364,10 +394,11 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
     a.href = URL.createObjectURL(blob);
     a.download = 'hub-salvataggio.json';
     a.click();
-    URL.revokeObjectURL(a.href);
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
   const carica = (f: File | undefined) => {
     if (!f) return;
+    if (!confirm('Il file sostituisce tutti i messaggi pronti e i profili attuali. Continuare?')) return;
     f.text().then((t) => {
       try {
         setStato((s) => importa(t, s));
@@ -393,9 +424,10 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
 
       <h2>IA: Claude sul Mac Studio</h2>
       <label className="etichetta">Indirizzo del ponte<input value={stato.impostazioni.ponte} inputMode="url" autoCapitalize="off" autoCorrect="off" onChange={(e) => setImp('ponte', e.target.value)} /></label>
-      <label className="etichetta">Token<input type="password" value={stato.impostazioni.token} autoComplete="off" onChange={(e) => setImp('token', e.target.value)} /></label>
+      <label className="etichetta">Token<input type="password" value={stato.impostazioni.token} placeholder="lo stesso di Penna e Tubo" autoComplete="off" onChange={(e) => setImp('token', e.target.value)} /></label>
+      <p className="nota">Serve Tailscale acceso su questo dispositivo. Il token resta salvato solo qui.</p>
       <div className="riga">
-        <button className="primario" onClick={provaConnessione}>Prova connessione</button>
+        <button className="primario" disabled={provando} onClick={provaConnessione}>Prova connessione</button>
         <span data-testid="esito-prova">{prova}</span>
       </div>
 
@@ -403,9 +435,9 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
       <p className="nota">Messaggi pronti e profili, senza il token.</p>
       <div className="riga">
         <button className="secondario" onClick={scarica}>Esporta</button>
-        <label className="secondario bottone-file">Importa<input type="file" accept="application/json,.json" onChange={(e) => carica(e.target.files?.[0])} /></label>
+        <label className="secondario bottone-file">Importa<input type="file" accept="application/json,.json" onChange={(e) => { carica(e.target.files?.[0]); e.target.value = ''; }} /></label>
       </div>
-      <p className="nota">HUB non legge e non manda messaggi da solo, e non ha server: i dati restano su questo dispositivo. Versione {__VERSIONE__}.</p>
+      <p className="nota">HUB non legge le tue chat e non manda niente al posto tuo. Messaggi pronti e profili restano solo su questo iPad o iPhone. Versione {__VERSIONE__}.</p>
     </section>
   );
 }
@@ -413,13 +445,14 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
 // ---------------------------------------------------------------- Anteprima con azioni finali
 function Anteprima(props: { testo: string; app: string; nomeProfilo: string; firma: string; chiudi: () => void; salvaPronto: (t: string) => void; avvisa: (t: string) => void }) {
   const [testo, setTesto] = useState(props.testo);
-  const [conFirma, setConFirma] = useState(false);
+  const [conFirma, setConFirma] = useState(!!props.firma.trim());
   const finale = conFirma && props.firma.trim() ? `${testo.trim()}\n${props.firma.trim()}` : testo.trim();
 
   const invia = async () => {
     const r = await condividi(finale);
     if (r === 'copiato') props.avvisa('Copiato: incollalo in ' + props.app);
     else if (r === 'errore') props.avvisa('Non riesco a condividere né a copiare');
+    else if (r === 'annullato') props.avvisa('Foglio chiuso: il messaggio NON è stato inviato');
     if (r === 'condiviso') props.chiudi();
   };
   const soloCopia = async () => {

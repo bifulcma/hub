@@ -22,37 +22,59 @@ export async function askConRiprova(o: Opzioni, ask: typeof askBridge = askBridg
   } catch (e) {
     if (o.signal?.aborted) throw e;
   }
+  if (o.signal?.aborted) throw new DOMException('Annullato', 'AbortError');
   return await ask(o);
 }
 
-/** Estrae le risposte da un JSON anche sporco (```json, testo attorno). */
-export function leggiRisposte(raw: string): string[] {
-  const testo = (raw || '').replace(/```(?:json)?/gi, '').trim();
-  const inizio = testo.indexOf('{');
-  const fine = testo.lastIndexOf('}');
-  if (inizio >= 0 && fine > inizio) {
-    try {
-      const dati = JSON.parse(testo.slice(inizio, fine + 1));
-      const lista = Array.isArray(dati?.risposte) ? dati.risposte : [];
-      const pulite = lista.filter((x: unknown) => typeof x === 'string' && x.trim()).map((x: string) => x.trim());
-      if (pulite.length) return pulite.slice(0, 3);
-    } catch {
-      /* si prova sotto */
+/** Tutti i blocchi JSON bilanciati ({…} o […]) dentro un testo, rispettando le stringhe. */
+export function blocchiJson(testo: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < testo.length; i++) {
+    const c = testo[i];
+    if (c !== '{' && c !== '[') continue;
+    let prof = 0;
+    let inStr = false;
+    for (let j = i; j < testo.length; j++) {
+      const d = testo[j];
+      if (inStr) {
+        if (d === '\\') j++;
+        else if (d === '"') inStr = false;
+        continue;
+      }
+      if (d === '"') inStr = true;
+      else if (d === '{' || d === '[') prof++;
+      else if (d === '}' || d === ']') {
+        prof--;
+        if (prof === 0) {
+          out.push(testo.slice(i, j + 1));
+          break;
+        }
+      }
     }
   }
-  const a = testo.indexOf('[');
-  const b = testo.lastIndexOf(']');
-  if (a >= 0 && b > a) {
+  return out;
+}
+
+const pulisciLista = (l: unknown[]) => l.filter((x) => typeof x === 'string' && x.trim()).map((x) => (x as string).trim());
+
+/** Estrae le risposte da un JSON anche sporco (```json, testo e simboli attorno). */
+export function leggiRisposte(raw: string): string[] {
+  const testo = (raw || '').replace(/```(?:json)?/gi, '');
+  let ripiego: string[] = [];
+  for (const b of blocchiJson(testo)) {
     try {
-      const lista = JSON.parse(testo.slice(a, b + 1));
-      if (Array.isArray(lista)) {
-        const pulite = lista.filter((x) => typeof x === 'string' && x.trim()).map((x: string) => x.trim());
-        if (pulite.length) return pulite.slice(0, 3);
+      const dati = JSON.parse(b);
+      if (Array.isArray(dati?.risposte)) {
+        const l = pulisciLista(dati.risposte);
+        if (l.length) return l.slice(0, 3);
+      } else if (Array.isArray(dati) && !ripiego.length) {
+        ripiego = pulisciLista(dati);
       }
     } catch {
-      /* niente */
+      /* blocco non JSON: avanti */
     }
   }
+  if (ripiego.length) return ripiego.slice(0, 3);
   throw new Error('Claude non ha dato risposte leggibili. Premi Riprova.');
 }
 
@@ -113,6 +135,7 @@ export function erroreSemplice(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e);
   const status = (e as { status?: number })?.status;
   if (status === 401 || status === 403) return 'Il token del ponte non è giusto: controllalo in Impostazioni.';
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'Sei senza internet: collegati al Wi-Fi e Riprova.';
   if (/contattare|Load failed|Failed to fetch|NetworkError/i.test(m))
     return 'Non raggiungo il ponte: controlla che Tailscale sia acceso su questo dispositivo, poi Riprova.';
   return m || 'Qualcosa non ha funzionato. Riprova.';

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { askConRiprova, leggiRisposte, promptRispondi, promptScrivi, pulisciTesto, erroreSemplice } from './ai';
 import { condividi, copia } from './invio';
-import { esporta, importa, normalizza, ordinaPronti, statoIniziale } from './store';
-import { BridgeError, provaPonte } from './ponte';
+import { esporta, importa, normalizza, ordinaPronti, ponteValido, statoIniziale } from './store';
+import { askBridge, BridgeError, parseBridgeSseStream, provaPonte } from './ponte';
 
 describe('leggiRisposte', () => {
   it('legge JSON pulito', () => {
@@ -23,7 +23,21 @@ describe('leggiRisposte', () => {
   });
 });
 
+describe('leggiRisposte robusto', () => {
+  it('prosa con graffe e quadre attorno resta leggibile', () => {
+    expect(leggiRisposte('Ecco {3} idee [vedi] poi {"risposte":["a","b","c"]} fine }')).toEqual(['a', 'b', 'c']);
+  });
+  it('graffe dentro le stringhe non confondono', () => {
+    expect(leggiRisposte('{"risposte":["ok {sì}","va bene ]"]}')).toEqual(['ok {sì}', 'va bene ]']);
+  });
+});
+
 describe('askConRiprova', () => {
+  it('due fallimenti → propaga l’errore', async () => {
+    const ask = vi.fn().mockRejectedValue(new Error('x'));
+    await expect(askConRiprova({ bridgeUrl: 'https://x', token: 't', provider: 'claude', prompt: 'p' }, ask)).rejects.toThrow('x');
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
   const o = { bridgeUrl: 'https://x', token: 't', provider: 'claude' as const, prompt: 'p' };
   it('riprova una volta se la prima fallisce', async () => {
     const ask = vi.fn().mockRejectedValueOnce(new Error('vuoto')).mockResolvedValueOnce('ok');
@@ -106,6 +120,28 @@ describe('dati', () => {
     expect(r.impostazioni.token).toBe('MIO');
     expect(r.pronti.personale).toHaveLength(6);
   });
+  it('importa NON prende ponte né profilo attivo dal file (il token non può finire altrove)', () => {
+    const s = statoIniziale();
+    s.attivo = 'business';
+    const file = JSON.parse(esporta(s));
+    file.impostazioni.ponte = 'https://cattivo.example.com';
+    const mio = statoIniziale();
+    mio.impostazioni.token = 'MIO';
+    const r = importa(JSON.stringify(file), mio);
+    expect(r.impostazioni.ponte).toBe(mio.impostazioni.ponte);
+    expect(r.attivo).toBe('personale');
+  });
+  it('normalizza regge tipi sbagliati', () => {
+    const r = normalizza({ impostazioni: 'x', profili: { personale: 5, business: { nome: 3, lingua: 'zz' } } });
+    expect(r.impostazioni.ponte).toMatch(/^https:/);
+    expect(r.profili.business.nome).toBe('Business');
+    expect(r.profili.business.lingua).toBe('it');
+  });
+  it('ponteValido vuole https', () => {
+    expect(ponteValido('https://a.ts.net:8443')).toBe(true);
+    expect(ponteValido('http://a')).toBe(false);
+    expect(ponteValido('boh')).toBe(false);
+  });
   it('importa rifiuta file estranei', () => {
     expect(() => importa('{"a":1}', statoIniziale())).toThrow(/HUB/);
   });
@@ -134,7 +170,33 @@ describe('invio', () => {
   });
 });
 
+describe('ponte SSE e askBridge', () => {
+  const corpo = (s: string) => new Response(s).body!;
+  it('concatena i text e ignora thinking', async () => {
+    const s = 'event: text\ndata: {"t":"a"}\n\nevent: thinking\ndata: {}\n\nevent: text\ndata: {"t":"b"}\n\nevent: done\ndata: {}\n\n';
+    await expect(parseBridgeSseStream(corpo(s))).resolves.toBe('ab');
+  });
+  it('evento error → BridgeError', async () => {
+    await expect(parseBridgeSseStream(corpo('event: error\ndata: {"message":"fuoco"}\n\n'))).rejects.toThrow(/fuoco/);
+  });
+  it('401 → BridgeError con status', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: false, status: 401, statusText: '', json: () => Promise.resolve({ message: 'no' }) });
+    await expect(askBridge({ bridgeUrl: 'https://p', token: 't', provider: 'claude', prompt: 'x', fetchFn: f as never })).rejects.toMatchObject({ status: 401 });
+  });
+  it('manda Bearer e provider claude a /ask', async () => {
+    const f = vi.fn().mockResolvedValue(new Response('event: text\ndata: {"t":"ok"}\n\n'));
+    await expect(askBridge({ bridgeUrl: 'https://p/', token: ' t ', provider: 'claude', prompt: 'x', system: 's', fetchFn: f as never })).resolves.toBe('ok');
+    expect(f.mock.calls[0][0]).toBe('https://p/ask');
+    expect(f.mock.calls[0][1].headers.Authorization).toBe('Bearer t');
+    expect(JSON.parse(f.mock.calls[0][1].body)).toMatchObject({ provider: 'claude', system: 's', web: false });
+  });
+});
+
 describe('provaPonte', () => {
+  it('va in timeout se il ponte non risponde', async () => {
+    const f = vi.fn((_u: string, o: { signal: AbortSignal }) => new Promise((_ok, ko) => o.signal.addEventListener('abort', () => ko(new Error('abort')))));
+    expect(await provaPonte('https://p', 't', f as never, 20)).toBe('irraggiungibile');
+  });
   it('ok / token / irraggiungibile', async () => {
     expect(await provaPonte('https://p/', 't', vi.fn().mockResolvedValue({ ok: true, status: 200 }) as never)).toBe('ok');
     expect(await provaPonte('https://p', 't', vi.fn().mockResolvedValue({ ok: false, status: 401 }) as never)).toBe('token');

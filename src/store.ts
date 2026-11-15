@@ -21,6 +21,7 @@ export interface Pronto {
 export interface Impostazioni {
   ponte: string;
   token: string;
+  linguaTraduzione?: Lingua;
 }
 
 export interface Stato {
@@ -83,15 +84,24 @@ export function normalizza(raw: unknown): Stato {
   const base = statoIniziale();
   if (!raw || typeof raw !== 'object') return base;
   const r = raw as Partial<Stato>;
+  const obj = (x: unknown) => (x && typeof x === 'object' ? (x as Record<string, unknown>) : {});
   const ids: ProfiloId[] = ['personale', 'business'];
   const out: Stato = {
     attivo: r.attivo === 'business' ? 'business' : 'personale',
     profili: { ...base.profili },
     pronti: { ...base.pronti },
-    impostazioni: { ...base.impostazioni, ...(r.impostazioni || {}) },
+    impostazioni: {
+      ponte: typeof obj(r.impostazioni).ponte === 'string' ? (obj(r.impostazioni).ponte as string) : base.impostazioni.ponte,
+      token: typeof obj(r.impostazioni).token === 'string' ? (obj(r.impostazioni).token as string) : '',
+      linguaTraduzione: (['it', 'de', 'fr', 'es', 'en'] as string[]).includes(obj(r.impostazioni).linguaTraduzione as string)
+        ? (obj(r.impostazioni).linguaTraduzione as Lingua)
+        : 'de',
+    },
   };
   for (const id of ids) {
-    if (r.profili?.[id]) out.profili[id] = { ...base.profili[id], ...r.profili[id], id };
+    const pr = obj(obj(r.profili)[id]);
+    const testo = (k: keyof Profilo) => (typeof pr[k] === 'string' ? (pr[k] as string) : (base.profili[id][k] as string));
+    out.profili[id] = { id, nome: testo('nome'), tono: testo('tono'), firma: testo('firma'), lingua: (['it', 'de', 'fr', 'es', 'en'].includes(testo('lingua')) ? testo('lingua') : base.profili[id].lingua) as Lingua, app: base.profili[id].app };
     const lista = r.pronti?.[id];
     if (Array.isArray(lista)) {
       out.pronti[id] = lista
@@ -110,6 +120,15 @@ export function carica(): Stato {
     return s ? normalizza(JSON.parse(s)) : statoIniziale();
   } catch {
     return statoIniziale();
+  }
+}
+
+/** Il ponte deve essere un indirizzo https:// valido. */
+export function ponteValido(url: string): boolean {
+  try {
+    return new URL(url.trim()).protocol === 'https:';
+  } catch {
+    return false;
   }
 }
 
@@ -136,8 +155,9 @@ export function esporta(s: Stato): string {
 export function importa(testo: string, attuale: Stato): Stato {
   const dati = JSON.parse(testo);
   if (!dati || typeof dati !== 'object' || !dati.pronti) throw new Error('Questo file non sembra un salvataggio di HUB.');
-  const nuovo = normalizza({ ...dati, impostazioni: { ponte: dati.impostazioni?.ponte || attuale.impostazioni.ponte } });
-  nuovo.impostazioni.token = attuale.impostazioni.token;
+  // Il ponte e il profilo attivo NON arrivano dal file: un file manomesso non deve poter mandare il token altrove.
+  const nuovo = normalizza({ ...dati, attivo: attuale.attivo });
+  nuovo.impostazioni = { ...attuale.impostazioni };
   return nuovo;
 }
 

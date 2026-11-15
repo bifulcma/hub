@@ -225,13 +225,17 @@ export async function askBridge(options: AskBridgeOptions): Promise<string> {
 }
 
 /** Prova il ponte: GET /health con il token. */
-export async function provaPonte(bridgeUrl: string, token: string, fetchFn: typeof fetch = fetch): Promise<'ok' | 'token' | 'irraggiungibile' | 'errore'> {
+export async function provaPonte(bridgeUrl: string, token: string, fetchFn: typeof fetch = fetch, ms = 10000): Promise<'ok' | 'token' | 'irraggiungibile' | 'errore'> {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), ms);
   try {
-    const r = await fetchFn(`${normalizeBridgeUrl(bridgeUrl)}/health`, { headers: { Authorization: 'Bearer ' + token.trim() } });
+    const r = await fetchFn(`${normalizeBridgeUrl(bridgeUrl)}/health`, { headers: { Authorization: 'Bearer ' + token.trim() }, signal: c.signal });
     if (r.ok) return 'ok';
     if (r.status === 401 || r.status === 403) return 'token';
     return 'errore';
   } catch {
     return 'irraggiungibile';
+  } finally {
+    clearTimeout(t);
   }
 }
