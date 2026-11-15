@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { provaPonte } from './ponte';
-import { chiediIA, contesto, iaPronta, leggiCollegamento, nomeIA, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, type ChatBreve, type Conversazione } from './wa';
+import { chiediIA, contesto, iaPronta, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, type ChatBreve, type Conversazione } from './wa';
 import {
   AZIONI,
   erroreSemplice,
@@ -246,7 +246,7 @@ function Chat({ stato, demo, apri }: { stato: Stato; demo: boolean; apri: (t: st
       <section className="pannello">
         <h1>Chat</h1>
         <p>Qui vedrai i messaggi del tuo WhatsApp <b>Personale</b> e potrai rispondere senza copiare e incollare.</p>
-        <p>Per collegarlo, sull'iPad (con Tailscale acceso) apri la pagina <b>collega</b> del Mac mini che ti ha dato Hermes, inquadra il QR col telefono e tocca «Apri HUB e collega».</p>
+        <p>Per collegarlo vai in <a href="#/impostazioni">Impostazioni</a> → WhatsApp Personale.</p>
       </section>
     );
 
@@ -697,8 +697,7 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
 function StatoWa({ stato, setStato, avvisa }: { stato: Stato; setStato: React.Dispatch<React.SetStateAction<Stato>>; avvisa: (t: string) => void }) {
   const [esito, setEsito] = useState('');
   const imp = stato.impostazioni;
-  if (!waConfigurato(imp))
-    return <p className="nota">Non collegato. Sull'iPad apri la pagina «collega» del Mac mini, inquadra il QR col telefono e tocca «Apri HUB e collega».</p>;
+  if (!waConfigurato(imp)) return <CollegaIncolla setStato={setStato} avvisa={avvisa} />;
   const prova = async () => {
     setEsito('Provo…');
     try {
@@ -716,6 +715,51 @@ function StatoWa({ stato, setStato, avvisa }: { stato: Stato; setStato: React.Di
         <button className="secondario" onClick={() => { if (confirm('Scollegare WhatsApp da HUB su questo dispositivo?')) { setStato((s) => ({ ...s, impostazioni: { ...s.impostazioni, waUrl: '', waToken: '' } })); avvisa('Scollegato'); } }}>Scollega</button>
         <span data-testid="esito-wa">{esito}</span>
       </div>
+    </>
+  );
+}
+
+// Sull'iPhone/iPad l'icona sulla schermata Home ha una memoria sua, separata da Safari e Chrome:
+// il link aperto nel browser non arriva all'icona. Qui lo si incolla a mano.
+function CollegaIncolla({ setStato, avvisa }: { setStato: React.Dispatch<React.SetStateAction<Stato>>; avvisa: (t: string) => void }) {
+  const [testo, setTesto] = useState('');
+  const [errore, setErrore] = useState('');
+  const collega = (t: string) => {
+    const wa = leggiCollegamentoDaTesto(t);
+    if (!wa) {
+      setErrore('Questo non è il link di collegamento. Sulla pagina «collega» del Mac mini tocca «Copia link» e riprova.');
+      return;
+    }
+    setErrore('');
+    setTesto('');
+    setStato((s) => ({ ...s, attivo: 'personale', impostazioni: { ...s.impostazioni, ...wa, ia: 'nemotron' } }));
+    avvisa('✅ WhatsApp collegato a HUB');
+  };
+  const incolla = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      setTesto(t);
+      collega(t);
+    } catch {
+      setErrore('Non riesco a leggere gli appunti: tieni premuto nel campo qui sotto e scegli «Incolla».');
+    }
+  };
+  return (
+    <>
+      <p className="nota">
+        Non collegato. Apri la pagina «collega» del Mac mini (con Tailscale acceso), inquadra il QR col telefono, poi tocca <b>«Copia link»</b> e torna qui.
+      </p>
+      <div className="riga">
+        <button className="primario" onClick={incolla}>Incolla link</button>
+      </div>
+      <label className="etichetta">
+        Oppure incollalo qui
+        <input value={testo} inputMode="url" autoCapitalize="off" autoCorrect="off" autoComplete="off" placeholder="https://bifulcma.github.io/hub/#/impostazioni?wa=…" onChange={(e) => setTesto(e.target.value)} />
+      </label>
+      <div className="riga">
+        <button className="secondario" disabled={!testo.trim()} onClick={() => collega(testo)}>Collega</button>
+      </div>
+      {errore && <p className="nota" role="alert">{errore}</p>}
     </>
   );
 }

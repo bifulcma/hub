@@ -116,3 +116,10 @@ export function leggiCollegamento(hash: string): { waUrl: string; waToken: strin
   }
   return { waUrl: u, waToken: t };
 }
+
+/** Link incollato a mano (icona sulla schermata Home: memoria separata dal browser). */
+export function leggiCollegamentoDaTesto(testo: string): { waUrl: string; waToken: string } | null {
+  const t = testo.trim();
+  const i = t.indexOf('#');
+  return leggiCollegamento(i >= 0 ? t.slice(i) : t.includes('?') ? t : '?' + t);
+}

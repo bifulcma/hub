@@ -26,5 +26,7 @@ describe('pagina /collega di hub-wa', () => {
     expect(html).toContain("fetch('/collega/stato'");
     expect(html).toContain("'/collega/qr.png?'");
     expect(html).toContain('catch(e)');
+    expect(html).toContain('id=copia');
+    expect(html).toContain('navigator.clipboard.writeText(linkAttuale)');
   });
 });

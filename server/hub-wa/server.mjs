@@ -228,11 +228,15 @@ img{width:min(80vw,400px);background:#fff;padding:12px;border-radius:12px}a.b{di
 let ultimo='';
 function mostra(chiave,html){if(chiave!==ultimo){ultimo=chiave;document.getElementById('c').innerHTML=html}}
 function nuovoQr(){const i=document.getElementById('qr');if(!i)return;const n=new Image();n.onload=()=>{i.src=n.src};n.src='/collega/qr.png?'+Date.now()}
-document.addEventListener('click',(e)=>{if(e.target&&e.target.id==='nuovo'){e.preventDefault();fetch('/collega/nuovo',{method:'POST'})}});
+let linkAttuale='';
+document.addEventListener('click',(e)=>{const id=e.target&&e.target.id;
+if(id==='nuovo'){e.preventDefault();fetch('/collega/nuovo',{method:'POST'})}
+if(id==='copia'){e.preventDefault();const f=()=>{const t=document.getElementById('testo');t.style.display='block';t.value=linkAttuale;t.select();document.getElementById('esito').textContent='Tieni premuto sul testo e scegli Copia.'};
+if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(linkAttuale).then(()=>{document.getElementById('esito').textContent='✅ Link copiato. Ora apri HUB dall’icona → Impostazioni → «Incolla link».'},f)}else f()}});
 async function giro(){
 try{const x=await fetch('/collega/stato',{cache:'no-store'});if(!x.ok)throw new Error('HTTP '+x.status);const r=await x.json();
 if(r.stato==='qr'){mostra('qr','<p>Sul <b>telefono Personale</b>: WhatsApp → Impostazioni → <b>Dispositivi collegati</b> → <b>Collega un dispositivo</b>, poi inquadra:</p><img id=qr alt="QR">');nuovoQr()}
-else if(r.stato==='collegato'){mostra('ok'+r.numero,'<p>✅ WhatsApp collegato a HUB ('+r.numero+').</p><p>Ultimo passo, sul dispositivo dove userai HUB (iPad o iPhone):</p><a class=b href="'+r.link+'">Apri HUB e collega</a><p style="font-size:14px;color:#6b6259">Il link porta la password solo dentro HUB su questo dispositivo.</p>')}
+else if(r.stato==='collegato'){linkAttuale=r.link;mostra('ok'+r.numero,'<p>✅ WhatsApp collegato a HUB ('+r.numero+').</p><p>Ultimo passo, sul dispositivo dove userai HUB (iPad o iPhone).</p><p><b>Se apri HUB dall’icona sulla schermata Home</b>: tocca «Copia link», poi in HUB → Impostazioni → «Incolla link».</p><a class=b id=copia href="#">Copia link</a><p id=esito></p><textarea id=testo readonly style="display:none;width:100%;height:90px;font-size:16px"></textarea><p>Se invece usi HUB nel browser:</p><a class=b href="'+r.link+'">Apri HUB e collega</a><p style="font-size:14px;color:#6b6259">Il link contiene la password: non mandarlo a nessuno.</p>')}
 else if(r.stato==='uscito'){mostra('uscito','<p>WhatsApp ha scollegato HUB.</p><a class=b id=nuovo href="#">Nuovo QR</a>')}
 else mostra('st'+r.stato,'<p>Attendo WhatsApp… ('+r.stato+')</p>')}
 catch(e){mostra('err','<p>Non riesco a raggiungere il Mac mini. Controlla che Tailscale sia acceso: riprovo da solo…</p>')}

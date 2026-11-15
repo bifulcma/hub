@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { askConRiprova, leggiRisposte, promptChat, promptRispondi, promptScrivi, pulisciTesto, erroreSemplice } from './ai';
 import { condividi, copia } from './invio';
-import { chiediIA, contesto, iaPronta, leggiCollegamento, nomeIA, waInvia } from './wa';
+import { chiediIA, contesto, iaPronta, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, waInvia } from './wa';
 import { esporta, importa, normalizza, ordinaPronti, ponteValido, statoIniziale } from './store';
 import { askBridge, BridgeError, parseBridgeSseStream, provaPonte } from './ponte';
 
@@ -195,6 +195,13 @@ describe('ponte SSE e askBridge', () => {
 
 describe('wa (Mac mini)', () => {
   const imp = { ...statoIniziale().impostazioni, waUrl: 'https://mini.ts.net:8445/', waToken: 'T' };
+  it('leggiCollegamentoDaTesto: link intero incollato, con spazi, o testo sbagliato', () => {
+    const link = 'https://bifulcma.github.io/hub/#/impostazioni?wa=' + encodeURIComponent('https://m:8445') + '&watoken=abc';
+    expect(leggiCollegamentoDaTesto('  ' + link + '\n')).toEqual({ waUrl: 'https://m:8445', waToken: 'abc' });
+    expect(leggiCollegamentoDaTesto('wa=' + encodeURIComponent('https://m:8445') + '&watoken=abc')).toEqual({ waUrl: 'https://m:8445', waToken: 'abc' });
+    expect(leggiCollegamentoDaTesto('ciao')).toBeNull();
+    expect(leggiCollegamentoDaTesto('')).toBeNull();
+  });
   it('leggiCollegamento dal link della pagina collega', () => {
     expect(leggiCollegamento('#/impostazioni?wa=' + encodeURIComponent('https://m:8445') + '&watoken=abc')).toEqual({ waUrl: 'https://m:8445', waToken: 'abc' });
     expect(leggiCollegamento('#/impostazioni?wa=http%3A%2F%2Fm&watoken=abc')).toBeNull();
