@@ -16,10 +16,18 @@ import { condividi, copia } from './invio';
 import { carica, esporta, importa, nuovoId, ordinaPronti, ponteValido, salva, type Lingua, type ProfiloId, type Stato } from './store';
 
 type Pagina = 'rispondi' | 'scrivi' | 'pronti' | 'impostazioni';
+
+/** Messaggio arrivato da un Comando rapido: #/rispondi?t=<testo>&p=business */
+function leggiArrivo(): { testo: string; profilo?: ProfiloId } {
+  if (typeof location === 'undefined') return { testo: '' };
+  const q = new URLSearchParams(location.hash.split('?')[1] || '');
+  const p = q.get('p');
+  return { testo: q.get('t') || '', profilo: p === 'business' || p === 'personale' ? p : undefined };
+}
 const PAGINE: Pagina[] = ['rispondi', 'scrivi', 'pronti', 'impostazioni'];
 
 function paginaDaHash(): Pagina {
-  const h = (typeof location !== 'undefined' ? location.hash : '').replace(/^#\/?/, '');
+  const h = (typeof location !== 'undefined' ? location.hash : '').replace(/^#\/?/, '').split('?')[0];
   return (PAGINE as string[]).includes(h) ? (h as Pagina) : 'rispondi';
 }
 
@@ -40,7 +48,11 @@ const Icona = ({ nome }: { nome: Pagina }) => {
 const ETICHETTE: Record<Pagina, string> = { rispondi: 'Rispondi', scrivi: 'Scrivi', pronti: 'Pronti', impostazioni: 'Impostazioni' };
 
 export default function App() {
-  const [stato, setStato] = useState<Stato>(() => carica());
+  const [stato, setStato] = useState<Stato>(() => {
+    const s = carica();
+    const q = leggiArrivo();
+    return q.profilo ? { ...s, attivo: q.profilo } : s;
+  });
   const [pagina, setPagina] = useState<Pagina>(paginaDaHash);
   const [toast, setToast] = useState('');
   const [nuovaVersione, setNuovaVersione] = useState<null | (() => void)>(null);
@@ -135,7 +147,7 @@ export default function App() {
 
 // ---------------------------------------------------------------- Rispondi
 function Rispondi({ stato, demo, apri, avvisa }: { stato: Stato; demo: boolean; apri: (t: string) => void; avvisa: (t: string) => void }) {
-  const [ricevuto, setRicevuto] = useState('');
+  const [ricevuto, setRicevuto] = useState(() => leggiArrivo().testo);
   const [intenzione, setIntenzione] = useState('');
   const [risposte, setRisposte] = useState<string[]>([]);
   const [lavoro, setLavoro] = useState(false);
@@ -152,18 +164,31 @@ function Rispondi({ stato, demo, apri, avvisa }: { stato: Stato; demo: boolean; 
   }, [stato.attivo]);
   useEffect(() => () => ctrl.current?.abort(), []);
 
-  const incolla = async () => {
+  const incolla = async (eProponi = false) => {
     try {
       const t = await navigator.clipboard.readText();
-      if (t.trim()) setRicevuto(t);
-      else avvisa('Gli appunti sono vuoti: copia prima il messaggio in WhatsApp');
+      if (t.trim()) {
+        setRicevuto(t);
+        if (eProponi) proponi(t);
+      } else avvisa('Gli appunti sono vuoti: copia prima il messaggio in WhatsApp');
     } catch {
       setErrore('Non posso leggere gli appunti: tieni premuto nella casella e scegli «Incolla».');
     }
   };
 
-  const proponi = async () => {
-    if (!ricevuto.trim()) return;
+  // Arrivo da Comando rapido: propone subito e pulisce l'indirizzo.
+  useEffect(() => {
+    const a = leggiArrivo();
+    if (a.testo.trim()) {
+      history.replaceState(null, '', '#/rispondi');
+      proponi(a.testo);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const proponi = async (testoForzato?: string) => {
+    const daUsare = typeof testoForzato === 'string' ? testoForzato : ricevuto;
+    if (!daUsare.trim()) return;
     ctrl.current?.abort();
     const c = new AbortController();
     ctrl.current = c;
@@ -174,7 +199,7 @@ function Rispondi({ stato, demo, apri, avvisa }: { stato: Stato; demo: boolean; 
       let lista: string[];
       if (demo) lista = await demoRispondi(stato.attivo, intenzione, c.signal);
       else {
-        const { system, prompt } = promptRispondi(profilo, ricevuto, intenzione);
+        const { system, prompt } = promptRispondi(profilo, daUsare, intenzione);
         const raw = await askConRiprova({ bridgeUrl: stato.impostazioni.ponte, token: stato.impostazioni.token, provider: 'claude', system, prompt, signal: c.signal });
         lista = leggiRisposte(raw);
       }
@@ -195,15 +220,19 @@ function Rispondi({ stato, demo, apri, avvisa }: { stato: Stato; demo: boolean; 
     <section className="griglia-rispondi">
       <div className="pannello">
         <h1>Rispondi</h1>
+        <button className="primario largo grande" data-testid="incolla-proponi" disabled={lavoro} onClick={() => incolla(true)}>
+          📋 Incolla e proponi
+        </button>
+        <p className="suggerimento">In WhatsApp tieni premuto il messaggio → Copia, poi torna qui e tocca il pulsante.</p>
         <label className="etichetta" htmlFor="ricevuto">Messaggio ricevuto</label>
         <textarea id="ricevuto" data-testid="ricevuto" rows={6} placeholder="Incolla qui il messaggio ricevuto" value={ricevuto} onChange={(e) => setRicevuto(e.target.value)} />
         <div className="riga">
-          <button className="secondario" onClick={incolla}>Incolla</button>
+          <button className="secondario" onClick={() => incolla(false)}>Solo incolla</button>
           {ricevuto && <button className="secondario" onClick={() => { setRicevuto(''); setRisposte([]); }}>Svuota</button>}
         </div>
         <label className="etichetta" htmlFor="intenzione">Cosa vuoi rispondere? <span className="facoltativo">(facoltativo)</span></label>
         <input id="intenzione" type="text" placeholder={stato.attivo === 'business' ? "es. conferma l'appuntamento di venerdì" : "es. di' che va bene giovedì"} value={intenzione} onChange={(e) => setIntenzione(e.target.value)} />
-        <button className="primario largo" data-testid="proponi" disabled={!ricevuto.trim() || lavoro} onClick={proponi}>
+        <button className="primario largo" data-testid="proponi" disabled={!ricevuto.trim() || lavoro} onClick={() => proponi()}>
           Proponi risposte
         </button>
         {!ricevuto.trim() && <p className="suggerimento">Prima incolla il messaggio che hai ricevuto.</p>}
@@ -218,7 +247,7 @@ function Rispondi({ stato, demo, apri, avvisa }: { stato: Stato; demo: boolean; 
         )}
         {errore && (
           <div className="errore">
-            {errore} <button className="secondario piccolo" onClick={proponi}>Riprova</button>
+            {errore} <button className="secondario piccolo" onClick={() => proponi()}>Riprova</button>
           </div>
         )}
         {!lavoro && !errore && risposte.length === 0 && <p className="vuoto">Incolla un messaggio e premi «Proponi risposte».</p>}
