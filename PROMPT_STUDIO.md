@@ -43,6 +43,9 @@ File principali:
 - hub-wa 2 linee (Personale + Business) e correzione «stessa persona due volte» (codice nascosto @lid) installate sul Mini il 15/11 sera: file `server.mjs`, `memoria.mjs`, `linee.mjs` (copiarli TUTTI e tre in `~/hub-wa/`). Pagina QR: `/collega` (Personale) e `/collega?linea=business`. Il Business parte solo se ha già una sessione. Corretta la pagina `/collega` che restava bianca (apice escapato nel template literal; test in `server/hub-wa/pagina.test.mjs`).
 - NON ancora provato su dispositivi veri: Condividi verso WhatsApp/WhatsApp Business, «Incolla e proponi», Comando rapido `comandi/Rispondi con HUB.shortcut`, chat WhatsApp vera e invio vero.
 
+- Sera 15/11 (fine giornata): Business ricollegato pulito (150 chat, quasi tutte con nome). Personale SCOLLEGATO apposta per rifare il QR e riavere storico+nomi: Marco deve ancora inquadrarlo (`/collega` → «Mostra il QR»). Controlla con `ssh mini` + `/chats?linea=…` (conta solo, mai contenuti).
+- Prossimo tema scelto da Marco per il 16/11: **allegati** (foto, vocali, documenti nelle chat di HUB).
+
 ## Possibili prossimi passi (chiedi a Marco quale, proponendo il primo)
 1. Notifica/contatore di messaggi nuovi nella scheda Chat (solo dentro l'app, niente push).
 2. Nella Chat: messaggi pronti del profilo inseribili con un tocco.
