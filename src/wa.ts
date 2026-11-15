@@ -47,7 +47,7 @@ async function chiama<T>(i: Impostazioni, percorso: string, opz: { metodo?: stri
     });
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
-    throw new WaErrore('Non raggiungo il Mac mini: controlla che Tailscale sia acceso.');
+    throw new WaErrore('Non raggiungo il Mac mini. Controlla che Tailscale sia acceso. Se HUB è aperto dall’icona: Impostazioni → il tuo nome → iCloud → Relay privato spento.');
   }
   let d: { error?: string } & Record<string, unknown> = {};
   try {
@@ -133,7 +133,7 @@ export async function collegaDalMini(base = WA_MINI, f: typeof fetch = fetch): P
   try {
     r = await f(base.replace(/\/+$/, '') + '/collega/stato', { cache: 'no-store' });
   } catch {
-    throw new WaErrore('Non raggiungo il Mac mini: accendi Tailscale su questo dispositivo e riprova.');
+    throw new WaErrore('Non raggiungo il Mac mini. Controlla che Tailscale sia acceso. Se HUB è aperto dall’icona: Impostazioni → il tuo nome → iCloud → Relay privato spento.');
   }
   if (!r.ok) throw new WaErrore('Il Mac mini risponde con un errore (' + r.status + ').', r.status);
   const d = (await r.json()) as { stato?: string; link?: string };

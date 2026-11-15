@@ -619,7 +619,7 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
     setProva('Provo…');
     const r = await provaPonte(stato.impostazioni.ponte, stato.impostazioni.token);
     setProva(
-      r === 'ok' ? '✅ Collegato a Claude sullo Studio' : r === 'token' ? '❌ Token sbagliato' : r === 'irraggiungibile' ? '❌ Non raggiungo il ponte: Tailscale è acceso?' : '❌ Il ponte risponde con un errore',
+      r === 'ok' ? '✅ Collegato a Claude sullo Studio' : r === 'token' ? '❌ Token sbagliato' : r === 'irraggiungibile' ? '❌ Non raggiungo il ponte: Tailscale è acceso? (Dall’icona serve anche il Relay privato di iCloud spento.)' : '❌ Il ponte risponde con un errore',
     );
     setProvando(false);
   };

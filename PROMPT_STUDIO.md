@@ -38,7 +38,8 @@ File principali:
 
 ## Stato al 15/11/2026
 - HUB 0.2.0 pubblicato, 44 test verdi.
-- hub-wa gira sul Mini come servizio fisso (launchd) e WhatsApp Personale è COLLEGATO (15/11 sera). Corretta la pagina `/collega` che restava bianca (apice escapato nel template literal; test in `server/hub-wa/pagina.test.mjs`).
+- hub-wa gira sul Mini come servizio fisso (launchd) e WhatsApp Personale è COLLEGATO (15/11 sera, ricollegato col telefono Personale dopo un primo collegamento sbagliato col Business, subito scollegato e sessione cancellata). Le chat stanno solo in RAM: ogni riavvio di hub-wa svuota la lista e lo storico torna solo ricollegando col QR → non riavviarlo senza avvisare Marco.
+- HUB 0.2.4: «Collega WhatsApp» con un tocco (HUB legge /collega/stato dal Mini). Sull'iPhone l'icona sulla Home ha memoria separata dal browser e usa il motore di Safari: col Relay privato di iCloud acceso i nomi *.ts.net non si risolvono (Chrome invece funziona). Soluzione: Relay privato spento. Chat vista funzionare sull'iPhone; invio vero NON ancora provato. Corretta la pagina `/collega` che restava bianca (apice escapato nel template literal; test in `server/hub-wa/pagina.test.mjs`).
 - NON ancora provato su dispositivi veri: Condividi verso WhatsApp/WhatsApp Business, «Incolla e proponi», Comando rapido `comandi/Rispondi con HUB.shortcut`, chat WhatsApp vera e invio vero.
 
 ## Possibili prossimi passi (chiedi a Marco quale, proponendo il primo)
