@@ -11,7 +11,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, appendFileSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { creaMemoria, nomeChat } from './memoria.mjs';
+import { creaMemoria } from './memoria.mjs';
 import { LINEE, dopoChiusura, lineaDa, motivoBlocco } from './linee.mjs';
 
 const BASE = path.join(os.homedir(), '.hermes', 'hub-wa');
@@ -64,7 +64,7 @@ async function avvia(L) {
     getMessage: async () => ({ conversation: '' }),
   });
   L.sock = sock;
-  const { chats, jidChat, imparaLid, imparaDaContatto } = L.mem;
+  const { imparaLid, imparaDaContatto } = L.mem;
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('connection.update', (u) => {
     if (L.sock !== sock) return; // socket vecchio
@@ -77,6 +77,18 @@ async function avvia(L) {
       L.qr = '';
       L.numero = (sock.user?.id || '').replace(/:.*@/, '@').replace(/@.*/, '');
       log('collegato ' + L.id);
+      // Se dopo un po' quasi nessuna chat ha un nome (sincronizzazione interrotta), chiediamo di nuovo
+      // la rubrica a WhatsApp, una volta sola: è la stessa sincronizzazione che fa WhatsApp Web.
+      setTimeout(() => {
+        const tot = L.mem.chats.size;
+        const senza = L.mem.senzaNome();
+        if (L.sock !== sock || L.rubricaChiesta || tot < 5 || senza < tot * 0.8) return;
+        L.rubricaChiesta = true;
+        log('nomi mancanti ' + L.id + ' (' + senza + '/' + tot + '): risincronizzo la rubrica');
+        Promise.resolve(sock.resyncAppState?.(['critical_unblock_low'], true))
+          .then(() => log('rubrica ' + L.id + ': ora senza nome ' + L.mem.senzaNome() + '/' + L.mem.chats.size))
+          .catch((e) => log('rubrica ' + L.id + ' non riuscita: ' + (e?.message || e)));
+      }, 30000);
     }
     if (u.connection === 'close') {
       const motivo = new Boom(u.lastDisconnect?.error)?.output?.statusCode;
@@ -98,22 +110,10 @@ async function avvia(L) {
   sock.ev.on('messaging-history.set', ({ chats: cs = [], contacts = [], messages = [] }) => {
     for (const k of contacts) imparaDaContatto(k);
     for (const m of messages) ricordaERisolvi(L, m);
-    for (const k of contacts) {
-      const c = chats.get(jidChat(k.id));
-      if (c && !c.nome) c.nome = k.notify || k.name || '';
-    }
-    for (const ch of cs) {
-      const c = chats.get(jidChat(ch.id));
-      if (c && !c.nome && ch.name) c.nome = ch.name;
-    }
+    for (const ch of cs) if (ch.name && !String(ch.id).endsWith('@g.us')) imparaDaContatto({ id: ch.id, notify: ch.name });
   });
-  sock.ev.on('contacts.upsert', (cs) => {
-    for (const k of cs) {
-      imparaDaContatto(k);
-      const c = chats.get(jidChat(k.id));
-      if (c && (k.name || k.notify)) c.nome = k.name || k.notify;
-    }
-  });
+  sock.ev.on('contacts.upsert', (cs) => { for (const k of cs) imparaDaContatto(k); });
+  sock.ev.on('contacts.update', (cs) => { for (const k of cs) imparaDaContatto(k); });
   sock.ev.on('lid-mapping.update', (x) => {
     for (const { lid, pn } of Array.isArray(x) ? x : [x]) imparaLid(lid, pn);
   });
@@ -281,14 +281,14 @@ const server = http.createServer(async (req, res) => {
         .sort((a, b) => b.ts - a.ts)
         .map((c) => {
           const u = c.messaggi[c.messaggi.length - 1];
-          return { jid: c.jid, nome: nomeChat(c), ultimo: u?.testo.slice(0, 120) || '', daMe: !!u?.daMe, ts: c.ts };
+          return { jid: c.jid, nome: L.mem.nomeDi(c), ultimo: u?.testo.slice(0, 120) || '', daMe: !!u?.daMe, ts: c.ts };
         });
       return invia(res, 200, { stato: L.stato, chats: lista });
     }
     if (p === '/chat') {
       const c = L.mem.chats.get(L.mem.jidChat(url.searchParams.get('jid') || ''));
       if (!c) return invia(res, 404, { error: 'Chat non trovata (forse è vecchia: arriverà col prossimo messaggio).' });
-      return invia(res, 200, { jid: c.jid, nome: nomeChat(c), messaggi: c.messaggi });
+      return invia(res, 200, { jid: c.jid, nome: L.mem.nomeDi(c), messaggi: c.messaggi });
     }
     if (p === '/ai' && req.method === 'POST') {
       const b = await corpo(req);

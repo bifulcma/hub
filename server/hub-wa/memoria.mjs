@@ -33,6 +33,9 @@ export const nomeChat = (c) => c.nome || (c.jid.endsWith('@lid') ? 'Contatto sen
 export function creaMemoria() {
   const chats = new Map(); // jid -> { jid, nome, messaggi: [{id, daMe, testo, ts}], ts }
   const lidPn = new Map(); // lid -> pn
+  // Nomi, anche se arrivano PRIMA della chat: rubrica del telefono (vince) e nome scelto dalla persona.
+  const rubrica = new Map(); // jid -> nome salvato in rubrica
+  const notify = new Map(); // jid -> nome che la persona si è data su WhatsApp
   /** Jid con cui teniamo la chat: il numero se lo conosciamo, altrimenti quello ricevuto. */
   const jidChat = (j) => {
     const u = soloUtente(j);
@@ -60,13 +63,25 @@ export function creaMemoria() {
     if (!c.nome && vecchia.nome) c.nome = vecchia.nome;
     c.ts = Math.max(c.ts, vecchia.ts);
   }
+  const nomeDa = (mappa, j) => mappa.get(j) || [...lidPn].filter(([, pn]) => pn === j).map(([lid]) => mappa.get(lid)).find(Boolean) || '';
+
+  /** Nome da mostrare: rubrica, poi nome WhatsApp, poi numero; mai il codice nascosto. */
+  function nomeDi(c) {
+    return nomeDa(rubrica, c.jid) || c.nome || nomeDa(notify, c.jid) || nomeChat(c);
+  }
 
   /** Dalla rubrica/storico: un contatto può portare sia il codice nascosto sia il numero. */
   function imparaDaContatto(k) {
     if (!k) return;
-    const pn = k.phoneNumber || (String(k.id || '').endsWith('@s.whatsapp.net') ? k.id : '');
-    const lid = k.lid || (String(k.id || '').endsWith('@lid') ? k.id : '');
+    const pn = soloUtente(k.phoneNumber || (String(k.id || '').endsWith('@s.whatsapp.net') ? k.id : ''));
+    const lid = soloUtente(k.lid || (String(k.id || '').endsWith('@lid') ? k.id : ''));
     if (lid && pn) imparaLid(lid, pn);
+    const n1 = String(k.name || '').trim();
+    const n2 = String(k.notify || k.verifiedName || '').trim();
+    for (const j of [pn, lid].filter(Boolean)) {
+      if (n1) rubrica.set(j, n1);
+      if (n2) notify.set(j, n2);
+    }
   }
 
   /** Ricorda un messaggio. Restituisce il jid della chat (o '' se ignorato). */
@@ -101,5 +116,5 @@ export function creaMemoria() {
     return jid;
   }
 
-  return { chats, jidChat, imparaLid, imparaDaContatto, ricorda, svuota: () => { chats.clear(); lidPn.clear(); } };
+  return { chats, jidChat, imparaLid, imparaDaContatto, ricorda, nomeDi, senzaNome: () => [...chats.values()].filter((c) => !nomeDa(rubrica, c.jid) && !c.nome && !nomeDa(notify, c.jid)).length, svuota: () => { chats.clear(); lidPn.clear(); rubrica.clear(); notify.clear(); } };
 }

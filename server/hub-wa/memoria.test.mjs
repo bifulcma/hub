@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { creaMemoria, nomeChat } from './memoria.mjs';
 
-let chats, imparaDaContatto, imparaLid, jidChat, ricorda;
+let chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome;
 
 const PN = '391234567890@s.whatsapp.net';
 const LID = '219876543210987@lid';
@@ -14,7 +14,7 @@ const msg = (id, remoteJid, testo, extra = {}) => ({
 });
 
 beforeEach(() => {
-  ({ chats, imparaDaContatto, imparaLid, jidChat, ricorda } = creaMemoria());
+  ({ chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome } = creaMemoria());
 });
 
 describe('memoria hub-wa: codice nascosto (@lid) e numero', () => {
@@ -70,5 +70,27 @@ describe('memoria hub-wa: codice nascosto (@lid) e numero', () => {
     altra.ricorda(msg('f2', PN, 'business'));
     expect(chats.get(PN).messaggi.map((m) => m.testo)).toEqual(['personale']);
     expect(altra.chats.get(PN).messaggi.map((m) => m.testo)).toEqual(['business']);
+  });
+
+  it('nomi arrivati PRIMA delle chat non si perdono; la rubrica vince sul nome WhatsApp', () => {
+    imparaDaContatto({ id: PN, name: 'Martina B.' });
+    imparaDaContatto({ id: LID, phoneNumber: PN, notify: 'tina' });
+    ricorda(msg('g1', PN, 'ciao', { fromMe: true }));
+    expect(nomeDi(chats.get(PN))).toBe('Martina B.');
+    expect(senzaNome()).toBe(0);
+  });
+  it('solo nome WhatsApp (notify) o niente: numero come ultima scelta', () => {
+    const altro = '33600000000@s.whatsapp.net';
+    ricorda(msg('h1', altro, 'x', { fromMe: true }));
+    expect(nomeDi(chats.get(altro))).toBe('+33600000000');
+    expect(senzaNome()).toBe(1);
+    imparaDaContatto({ id: altro, notify: 'Paul' });
+    expect(nomeDi(chats.get(altro))).toBe('Paul');
+  });
+  it('nome della rubrica salvato sul codice nascosto vale anche per la chat col numero', () => {
+    imparaLid(LID, PN);
+    imparaDaContatto({ id: LID, name: 'Martina' });
+    ricorda(msg('i1', PN, 'ok', { fromMe: true }));
+    expect(nomeDi(chats.get(PN))).toBe('Martina');
   });
 });
