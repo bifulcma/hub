@@ -94,7 +94,9 @@ async function avvia(L) {
         if (L.sock !== sock || L.rubricaChiesta || L.mem.nomiInRubrica() > 0) return;
         L.rubricaChiesta = true;
         log('rubrica vuota ' + L.id + ': la chiedo a WhatsApp');
-        Promise.resolve(sock.resyncAppState?.(['critical_unblock_low'], true))
+        // Senza versione salvata WhatsApp rimanda la rubrica intera (istantanea), non solo le novità.
+        Promise.resolve(state.keys.set({ 'app-state-sync-version': { critical_unblock_low: null } }))
+          .then(() => sock.resyncAppState?.(['critical_unblock_low'], true))
           .then(() => log('rubrica ' + L.id + ': ' + L.mem.nomiInRubrica() + ' nomi'))
           .catch((e) => log('rubrica ' + L.id + ' non riuscita: ' + (e?.message || e)));
       }, 20000);
@@ -121,7 +123,7 @@ async function avvia(L) {
     for (const m of messages) ricordaERisolvi(L, m);
     for (const ch of cs) if (ch.name && !String(ch.id).endsWith('@g.us')) imparaDaContatto({ id: ch.id, notify: ch.name });
   });
-  sock.ev.on('contacts.upsert', (cs) => { for (const k of cs) imparaDaContatto(k); });
+  sock.ev.on('contacts.upsert', (cs) => { for (const k of cs) imparaDaContatto(k); log('contatti ricevuti ' + L.id + ': ' + cs.length + ' (con nome in rubrica ' + L.mem.nomiInRubrica() + ')'); });
   sock.ev.on('contacts.update', (cs) => { for (const k of cs) imparaDaContatto(k); });
   sock.ev.on('lid-mapping.update', (x) => {
     for (const { lid, pn } of Array.isArray(x) ? x : [x]) imparaLid(lid, pn);
