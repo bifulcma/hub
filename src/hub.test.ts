@@ -311,3 +311,19 @@ describe('icone delle persone', () => {
     expect(avatar('Contatto senza nome', 'x@lid').anonimo).toBe(true);
   });
 });
+
+import { dimensione, indirizzoAllegato } from './wa';
+describe('allegati in HUB', () => {
+  it('indirizzo completo solo se c’è il Mini e l’indirizzo firmato', () => {
+    const i = { ...statoIniziale().impostazioni, waUrl: 'https://m:8445/', waToken: 'T' };
+    expect(indirizzoAllegato(i, { tipo: 'foto', mime: 'image/jpeg', byte: 1, nome: '', url: '/allegato?l=personale&s=x' })).toBe('https://m:8445/allegato?l=personale&s=x');
+    expect(indirizzoAllegato(i, { tipo: 'foto', mime: 'image/jpeg', byte: 1, nome: '' })).toBe('');
+    expect(indirizzoAllegato({ ...i, waUrl: '' }, { tipo: 'foto', mime: 'image/jpeg', byte: 1, nome: '', url: '/a' })).toBe('');
+  });
+  it('dimensioni leggibili', () => {
+    expect(dimensione(0)).toBe('');
+    expect(dimensione(500)).toBe('1 KB');
+    expect(dimensione(120000)).toBe('117 KB');
+    expect(dimensione(1500000)).toBe('1,4 MB');
+  });
+});

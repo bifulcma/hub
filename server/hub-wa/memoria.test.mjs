@@ -1,8 +1,8 @@
 // Stessa persona indicata col numero e col codice nascosto (@lid): una sola chat, mai «numeri strani».
 import { beforeEach, describe, expect, it } from 'vitest';
-import { creaMemoria, nomeChat } from './memoria.mjs';
+import { allegatoDi, creaMemoria, nomeChat, testoDi } from './memoria.mjs';
 
-let chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome;
+let chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome, grezzo, esporta, importa;
 
 const PN = '391234567890@s.whatsapp.net';
 const LID = '219876543210987@lid';
@@ -14,7 +14,7 @@ const msg = (id, remoteJid, testo, extra = {}) => ({
 });
 
 beforeEach(() => {
-  ({ chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome } = creaMemoria());
+  ({ chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome, grezzo, esporta, importa } = creaMemoria());
 });
 
 describe('memoria hub-wa: codice nascosto (@lid) e numero', () => {
@@ -92,5 +92,54 @@ describe('memoria hub-wa: codice nascosto (@lid) e numero', () => {
     imparaDaContatto({ id: LID, name: 'Martina' });
     ricorda(msg('i1', PN, 'ok', { fromMe: true }));
     expect(nomeDi(chats.get(PN))).toBe('Martina');
+  });
+
+});
+
+const foto = (id, jid = PN, extra = {}) => ({
+  key: { id, remoteJid: jid, fromMe: false },
+  messageTimestamp: 2000,
+  message: { imageMessage: { mimetype: 'image/jpeg', fileLength: 120000, caption: 'guarda', mediaKey: new Uint8Array([1, 2, 3]), url: 'https://x' }, ...extra },
+});
+const pdf = (id) => ({
+  key: { id, remoteJid: PN, fromMe: false },
+  messageTimestamp: 2001,
+  message: { documentWithCaptionMessage: { message: { documentMessage: { mimetype: 'application/pdf', fileLength: { low: 300000, high: 0 }, fileName: 'offerta.pdf', caption: 'ecco' } } } },
+});
+
+describe('allegati: foto e documenti a richiesta', () => {
+  it('riconosce foto e PDF (anche documento con didascalia)', () => {
+    expect(allegatoDi(foto('a'))).toEqual({ tipo: 'foto', mime: 'image/jpeg', byte: 120000, nome: '' });
+    expect(allegatoDi(pdf('b'))).toEqual({ tipo: 'documento', mime: 'application/pdf', byte: 300000, nome: 'offerta.pdf' });
+    expect(testoDi(pdf('b'))).toBe('[documento] offerta.pdf');
+  });
+  it('«visualizza una volta» non è mai scaricabile', () => {
+    const vu = { key: { id: 'v', remoteJid: PN }, message: { viewOnceMessageV2: { message: { imageMessage: { mimetype: 'image/jpeg' } } } } };
+    expect(allegatoDi(vu)).toBeNull();
+    expect(testoDi(vu)).toMatch(/una volta/);
+  });
+  it('tiene il messaggio originale solo finché è nella chat giusta', () => {
+    ricorda({ ...foto('f1'), messageTimestamp: 1 }); // la più vecchia
+    expect(grezzo(PN, 'f1')?.message.imageMessage.mimetype).toBe('image/jpeg');
+    expect(grezzo('altro@s.whatsapp.net', 'f1')).toBeNull();
+    expect(chats.get(PN).messaggi[0].allegato.tipo).toBe('foto');
+    for (let i = 0; i < 45; i++) ricorda(msg('t' + i, PN, 'testo ' + i));
+    expect(grezzo(PN, 'f1')).toBeNull(); // uscito dalla lista: dimenticato
+  });
+  it('passaggio da un servizio all\'altro: chat, nomi e allegati ripresi senza doppioni', () => {
+    imparaDaContatto({ id: PN, name: 'Martina' });
+    ricorda(foto('f2'));
+    ricorda(msg('m1', PN, 'ciao'));
+    const dati = JSON.parse(JSON.stringify(esporta()));
+    const nuova = creaMemoria();
+    nuova.ricorda(msg('m1', PN, 'ciao')); // già arrivato anche al servizio nuovo
+    expect(nuova.importa(dati)).toBe(1);
+    const c = nuova.chats.get(PN);
+    expect(c.messaggi.map((m) => m.id).sort()).toEqual(['f2', 'm1']);
+    expect(new Set(c.messaggi.map((m) => m.id)).size).toBe(c.messaggi.length);
+    expect(c.messaggi.length).toBe(2);
+    expect(nuova.nomeDi(c)).toBe('Martina');
+    expect(nuova.grezzo(PN, 'f2')).not.toBeNull();
+    expect(nuova.importa(null)).toBe(0);
   });
 });

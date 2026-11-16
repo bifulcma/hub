@@ -9,10 +9,36 @@ export const MAX_MSG = 40;
 export const chatSingola = (jid) => !!jid && (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid'));
 const soloUtente = (j) => String(j || '').replace(/:\d+(?=@)/, ''); // toglie il «:dispositivo»
 
+const vistaUnica = (c) => c?.viewOnceMessage || c?.viewOnceMessageV2 || c?.viewOnceMessageV2Extension;
+/** Contenuto vero del messaggio, togliendo gli involucri (effimero, documento con didascalia, «visualizza una volta»). */
+function contenuto(c) {
+  let x = c?.ephemeralMessage?.message || c;
+  const vu = vistaUnica(x);
+  if (vu) x = vu.message || x;
+  if (x?.documentWithCaptionMessage?.message) x = x.documentWithCaptionMessage.message;
+  return x || {};
+}
+const numero = (v) => Number(v?.low ?? v ?? 0) || 0;
+
+/**
+ * Allegato scaricabile a richiesta: solo foto e documenti (PDF ecc.).
+ * Mai i «visualizza una volta»: si rispettano, si guardano solo sul telefono.
+ */
+export function allegatoDi(m) {
+  const c = m?.message;
+  if (!c || vistaUnica(c?.ephemeralMessage?.message || c)) return null;
+  const x = contenuto(c);
+  if (x.imageMessage) return { tipo: 'foto', mime: x.imageMessage.mimetype || 'image/jpeg', byte: numero(x.imageMessage.fileLength), nome: '' };
+  if (x.documentMessage)
+    return { tipo: 'documento', mime: x.documentMessage.mimetype || 'application/octet-stream', byte: numero(x.documentMessage.fileLength), nome: String(x.documentMessage.fileName || x.documentMessage.title || 'documento').slice(0, 200) };
+  return null;
+}
+
 export function testoDi(m) {
   const c = m?.message;
   if (!c) return '';
-  const x = c.ephemeralMessage?.message || c.viewOnceMessage?.message || c;
+  if (vistaUnica(c?.ephemeralMessage?.message || c)) return '[da vedere una volta: aprila sul telefono]';
+  const x = contenuto(c);
   if (x.conversation) return x.conversation;
   if (x.extendedTextMessage?.text) return x.extendedTextMessage.text;
   if (x.imageMessage) return '[foto]' + (x.imageMessage.caption ? ' ' + x.imageMessage.caption : '');
@@ -36,6 +62,9 @@ export function creaMemoria() {
   // Nomi, anche se arrivano PRIMA della chat: rubrica del telefono (vince) e nome scelto dalla persona.
   const rubrica = new Map(); // jid -> nome salvato in rubrica
   const notify = new Map(); // jid -> nome che la persona si è data su WhatsApp
+  // Messaggi originali con allegato (servono per scaricarlo a richiesta): solo RAM, solo quelli ancora in lista.
+  const grezzi = new Map(); // id -> { key, message, messageTimestamp }
+  const togli = (lista) => { for (const x of lista) grezzi.delete(x.id); };
   /** Jid con cui teniamo la chat: il numero se lo conosciamo, altrimenti quello ricevuto. */
   const jidChat = (j) => {
     const u = soloUtente(j);
@@ -59,7 +88,7 @@ export function creaMemoria() {
     }
     for (const m of vecchia.messaggi) if (!c.messaggi.some((x) => x.id === m.id)) c.messaggi.push(m);
     c.messaggi.sort((a, b) => a.ts - b.ts);
-    if (c.messaggi.length > MAX_MSG) c.messaggi.splice(0, c.messaggi.length - MAX_MSG);
+    if (c.messaggi.length > MAX_MSG) togli(c.messaggi.splice(0, c.messaggi.length - MAX_MSG));
     if (!c.nome && vecchia.nome) c.nome = vecchia.nome;
     c.ts = Math.max(c.ts, vecchia.ts);
   }
@@ -105,16 +134,62 @@ export function creaMemoria() {
     }
     if (!k.fromMe && m.pushName) c.nome = m.pushName;
     if (c.messaggi.some((x) => x.id === k.id)) return jid;
-    c.messaggi.push({ id: k.id, daMe: !!k.fromMe, testo: testo.slice(0, 4000), ts });
+    const allegato = allegatoDi(m);
+    c.messaggi.push({ id: k.id, daMe: !!k.fromMe, testo: testo.slice(0, 4000), ts, ...(allegato ? { allegato } : {}) });
+    if (allegato) grezzi.set(k.id, { key: m.key, message: m.message, messageTimestamp: m.messageTimestamp });
     c.messaggi.sort((a, b) => a.ts - b.ts);
-    if (c.messaggi.length > MAX_MSG) c.messaggi.splice(0, c.messaggi.length - MAX_MSG);
+    if (c.messaggi.length > MAX_MSG) togli(c.messaggi.splice(0, c.messaggi.length - MAX_MSG));
     c.ts = Math.max(c.ts, ts);
     if (chats.size > MAX_CHAT) {
       const vecchie = [...chats.values()].sort((a, b) => a.ts - b.ts).slice(0, chats.size - MAX_CHAT);
-      for (const v of vecchie) chats.delete(v.jid);
+      for (const v of vecchie) {
+        togli(v.messaggi);
+        chats.delete(v.jid);
+      }
     }
     return jid;
   }
 
-  return { chats, jidChat, imparaLid, imparaDaContatto, ricorda, nomeDi, nomiInRubrica: () => rubrica.size, senzaNome: () => [...chats.values()].filter((c) => !nomeDa(rubrica, c.jid) && !c.nome && !nomeDa(notify, c.jid)).length, svuota: () => { chats.clear(); lidPn.clear(); rubrica.clear(); notify.clear(); } };
+  /** Il messaggio originale di un allegato, solo se è ancora nella chat indicata. */
+  function grezzo(jid, id) {
+    const c = chats.get(jidChat(jid));
+    if (!c || !c.messaggi.some((x) => x.id === id && x.allegato)) return null;
+    return grezzi.get(id) || null;
+  }
+
+  /** Tutta la memoria, per passarla al servizio nuovo durante un aggiornamento (da RAM a RAM, mai su disco). */
+  function esporta() {
+    return { chats: [...chats.values()], lidPn: [...lidPn], rubrica: [...rubrica], notify: [...notify], grezzi: [...grezzi] };
+  }
+  /** Riprende la memoria passata dal servizio vecchio, senza perdere quello che è già arrivato. */
+  function importa(d) {
+    if (!d || typeof d !== 'object') return 0;
+    for (const [a, b] of d.lidPn || []) lidPn.set(a, b);
+    for (const [a, b] of d.rubrica || []) if (!rubrica.has(a)) rubrica.set(a, b);
+    for (const [a, b] of d.notify || []) if (!notify.has(a)) notify.set(a, b);
+    for (const [a, b] of d.grezzi || []) if (!grezzi.has(a)) grezzi.set(a, b);
+    let n = 0;
+    for (const v of d.chats || []) {
+      if (!v?.jid || !Array.isArray(v.messaggi)) continue;
+      const jid = jidChat(v.jid);
+      const c = chats.get(jid);
+      if (!c) chats.set(jid, { jid, nome: v.nome || '', messaggi: v.messaggi.slice(-MAX_MSG), ts: v.ts || 0 });
+      else {
+        for (const m of v.messaggi) if (!c.messaggi.some((x) => x.id === m.id)) c.messaggi.push(m);
+        c.messaggi.sort((a, b) => a.ts - b.ts);
+        if (c.messaggi.length > MAX_MSG) togli(c.messaggi.splice(0, c.messaggi.length - MAX_MSG));
+        if (!c.nome && v.nome) c.nome = v.nome;
+        c.ts = Math.max(c.ts, v.ts || 0);
+      }
+      n++;
+    }
+    return n;
+  }
+
+  return {
+    chats, jidChat, imparaLid, imparaDaContatto, ricorda, nomeDi, grezzo, esporta, importa,
+    nomiInRubrica: () => rubrica.size,
+    senzaNome: () => [...chats.values()].filter((c) => !nomeDa(rubrica, c.jid) && !c.nome && !nomeDa(notify, c.jid)).length,
+    svuota: () => { chats.clear(); lidPn.clear(); rubrica.clear(); notify.clear(); grezzi.clear(); },
+  };
 }

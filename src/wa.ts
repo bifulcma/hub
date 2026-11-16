@@ -10,11 +10,30 @@ export interface ChatBreve {
   daMe: boolean;
   ts: number;
 }
+export interface Allegato {
+  tipo: 'foto' | 'documento';
+  mime: string;
+  byte: number;
+  nome: string;
+  /** Indirizzo firmato sul Mini (valido 30 minuti); si scarica solo quando Marco lo tocca. */
+  url?: string;
+}
 export interface Messaggio {
   id: string;
   daMe: boolean;
   testo: string;
   ts: number;
+  allegato?: Allegato;
+}
+
+/** Indirizzo completo di un allegato sul Mini, oppure '' se manca. */
+export const indirizzoAllegato = (i: Impostazioni, a?: Allegato) => (a?.url && i.waUrl ? i.waUrl.trim().replace(/\/+$/, '') + a.url : '');
+
+/** «120 KB», «1,4 MB». */
+export function dimensione(byte: number): string {
+  if (!byte) return '';
+  if (byte < 1024 * 1024) return Math.max(1, Math.round(byte / 1024)) + ' KB';
+  return (byte / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB';
 }
 export interface Conversazione {
   jid: string;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { provaPonte } from './ponte';
 import { avatar } from './avatar';
+import { dimensione, indirizzoAllegato, type Messaggio } from './wa';
 import { chiediIA, contesto, iaPronta, collegaDalMini, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, paginaCollega, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, waScollega, type ChatBreve, type Conversazione, type Linea } from './wa';
 import {
   AZIONI,
@@ -319,7 +320,7 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
           {aperta.messaggi.length === 0 && <p className="vuoto">Carico i messaggi…</p>}
           {aperta.messaggi.slice(-15).map((m) => (
             <div key={m.id} className={`bolla ${m.daMe ? 'mia' : 'sua'}`}>
-              {m.testo}
+              {m.allegato ? <BollaAllegato m={m} url={indirizzoAllegato(imp, m.allegato)} /> : m.testo}
               <span className="ora">{oraBreve(m.ts)}</span>
             </div>
           ))}
@@ -371,6 +372,39 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
         ))}
       </ul>
     </section>
+  );
+}
+
+// Allegati: si scaricano SOLO quando li tocchi (come WhatsApp Web), dal Mac mini, mai salvati.
+function BollaAllegato({ m, url }: { m: Messaggio; url: string }) {
+  const [mostra, setMostra] = useState('');
+  const [rotto, setRotto] = useState(false);
+  const a = m.allegato!;
+  const didascalia = a.tipo === 'foto' ? m.testo.replace(/^\[foto\]\s?/, '') : '';
+  if (!url) return <>{m.testo}</>;
+  if (a.tipo === 'documento')
+    return (
+      <a className="allegato" href={url} target="_blank" rel="noreferrer">
+        📄 <b>{a.nome || 'Documento'}</b>
+        <span className="sotto">{[dimensione(a.byte), 'Apri'].filter(Boolean).join(' · ')}</span>
+      </a>
+    );
+  return (
+    <>
+      {!mostra ? (
+        <button className="allegato" onClick={() => setMostra(url)}>
+          📷 <b>Mostra foto</b>
+          {a.byte ? <span className="sotto">{dimensione(a.byte)}</span> : null}
+        </button>
+      ) : rotto ? (
+        <span className="allegato">📷 Non disponibile: guardala sul telefono.</span>
+      ) : (
+        <a href={mostra} target="_blank" rel="noreferrer">
+          <img className="foto-chat" src={mostra} alt="Foto" onError={() => setRotto(true)} />
+        </a>
+      )}
+      {didascalia && <div>{didascalia}</div>}
+    </>
   );
 }
 

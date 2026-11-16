@@ -2,12 +2,12 @@
 // Tiene in MEMORIA (mai su disco) gli ultimi messaggi delle chat singole, propone risposte con
 // Nemotron LOCALE sul Mac Studio (Ollama) e manda un messaggio SOLO quando Marco tocca «Invia» in HUB.
 // Ascolta su 127.0.0.1; fuori casa si raggiunge solo via Tailscale Serve (https, tailnet).
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser, downloadMediaMessage, BufferJSON } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import http from 'node:http';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, appendFileSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -209,22 +209,83 @@ function invia(res, code, dati, tipo = 'application/json; charset=utf-8') {
   res.end(typeof dati === 'string' || Buffer.isBuffer(dati) ? dati : JSON.stringify(dati));
 }
 
-function corpo(req) {
+function corpo(req, massimo = 200000) {
   return new Promise((ok, ko) => {
     let s = '';
     req.on('data', (d) => {
       s += d;
-      if (s.length > 200000) {
+      if (s.length > massimo) {
         ko(new Error('troppo grande'));
         req.destroy();
       }
     });
     req.on('end', () => {
-      try { ok(s ? JSON.parse(s) : {}); } catch { ko(new Error('JSON non valido')); }
+      try { ok(s ? JSON.parse(s, BufferJSON.reviver) : {}); } catch { ko(new Error('JSON non valido')); }
     });
   });
 }
 
+
+// ------------------------------------------------------------------ Allegati (foto, documenti) a richiesta
+// Si scaricano da WhatsApp SOLO quando Marco li tocca in HUB (come WhatsApp Web), restano in RAM 10 minuti
+// e mai su disco. Indirizzo firmato (HMAC con il token), valido almeno 30 minuti e solo per quell'allegato.
+const MAX_ALLEGATO = 25 * 1024 * 1024;
+const MAX_CACHE = 80 * 1024 * 1024;
+const VITA_CACHE_MS = 10 * 60 * 1000;
+const MAX_ALL_ORA = 40; // per linea: restare discreti
+const cacheAllegati = new Map(); // linea|id -> { buf, mime, t }
+const scaricatiOra = { personale: [], business: [] };
+
+const firma = (linea, jid, id, e) => createHmac('sha256', TOKEN).update(`${linea}|${jid}|${id}|${e}`).digest('base64url').slice(0, 32);
+function indirizzoAllegato(linea, jid, id) {
+  const e = (Math.floor(Date.now() / 600000) + 4) * 600000; // stabile per 10 minuti, valido 30–40 minuti
+  const q = new URLSearchParams({ l: linea, j: jid, i: id, e: String(e), s: firma(linea, jid, id, e) });
+  return '/allegato?' + q.toString();
+}
+function firmaValida(q) {
+  const l = q.get('l'), j = q.get('j') || '', i = q.get('i') || '', e = Number(q.get('e')), s = q.get('s') || '';
+  if ((l !== 'personale' && l !== 'business') || !j || !i || !(e > Date.now())) return false;
+  const a = Buffer.from(s), b = Buffer.from(firma(l, j, i, e));
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+function pulisciCache() {
+  const ora = Date.now();
+  let tot = 0;
+  for (const [k, v] of [...cacheAllegati].sort((x, y) => y[1].t - x[1].t)) {
+    if (ora - v.t > VITA_CACHE_MS || tot + v.buf.length > MAX_CACHE) cacheAllegati.delete(k);
+    else tot += v.buf.length;
+  }
+}
+async function scaricaAllegato(L, jid, id) {
+  pulisciCache();
+  const chiave = L.id + '|' + id;
+  const c = cacheAllegati.get(chiave);
+  if (c) return c;
+  const m = L.mem.grezzo(jid, id);
+  const info = L.mem.chats.get(L.mem.jidChat(jid))?.messaggi.find((x) => x.id === id)?.allegato;
+  if (!m || !info) throw Object.assign(new Error('Allegato non più in memoria: guardalo sul telefono.'), { codice: 404 });
+  if (info.byte > MAX_ALLEGATO) throw Object.assign(new Error('File troppo grande per HUB (più di 25 MB): aprilo sul telefono.'), { codice: 413 });
+  if (L.stato !== 'collegato' || !L.sock) throw Object.assign(new Error('WhatsApp ' + L.etichetta + ' non è collegato.'), { codice: 503 });
+  const ora = Date.now();
+  scaricatiOra[L.id] = scaricatiOra[L.id].filter((t) => ora - t < 3600000);
+  if (scaricatiOra[L.id].length >= MAX_ALL_ORA) throw Object.assign(new Error('Troppi allegati aperti in un\'ora: riprova più tardi o guardali sul telefono.'), { codice: 429 });
+  scaricatiOra[L.id].push(ora);
+  let buf;
+  try {
+    buf = await Promise.race([
+      downloadMediaMessage(m, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: L.sock.updateMediaMessage }),
+      new Promise((_, ko) => setTimeout(() => ko(new Error('tempo scaduto')), 60000)),
+    ]);
+  } catch (e) {
+    log('allegato non scaricato ' + L.id + ': ' + (e?.message || e));
+    throw Object.assign(new Error('WhatsApp non ha più questo allegato (o non risponde): guardalo sul telefono.'), { codice: 410 });
+  }
+  if (buf.length > MAX_ALLEGATO) throw Object.assign(new Error('File troppo grande per HUB: aprilo sul telefono.'), { codice: 413 });
+  const v = { buf, mime: info.mime, nome: info.nome, t: Date.now() };
+  cacheAllegati.set(chiave, v);
+  log('allegato aperto ' + L.id + ' (' + info.tipo + ', ' + Math.round(buf.length / 1024) + ' KB)'); // mai nomi né contenuti
+  return v;
+}
 
 const PAGINA_COLLEGA = () => `<!doctype html><html lang=it><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>HUB — collega WhatsApp</title><style>body{font-family:-apple-system,sans-serif;background:#faf7f2;color:#2b2723;text-align:center;padding:24px;max-width:560px;margin:auto}
@@ -283,7 +344,40 @@ const server = http.createServer(async (req, res) => {
       return invia(res, 200, { ok: true });
     }
 
+    if (p === '/allegato') {
+      if (!firmaValida(url.searchParams)) return invia(res, 403, { error: 'Indirizzo scaduto: riapri la chat in HUB.' });
+      const La = linee[url.searchParams.get('l')];
+      try {
+        const a = await scaricaAllegato(La, url.searchParams.get('j'), url.searchParams.get('i'));
+        res.writeHead(200, {
+          'Content-Type': a.mime,
+          'Content-Length': a.buf.length,
+          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(a.nome || (a.mime.startsWith('image/') ? 'foto.jpg' : 'documento'))}`,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+          'Access-Control-Allow-Origin': ORIGINE,
+        });
+        return res.end(a.buf);
+      } catch (e) {
+        return invia(res, e.codice || 500, { error: e.message });
+      }
+    }
+
     if (!autorizzato(req)) return invia(res, 401, { error: 'token' });
+
+    // Aggiornamento senza perdere le chat: il servizio vecchio consegna la memoria, il nuovo la riprende.
+    // Passa da RAM a RAM (in una variabile della shell sul Mini), mai su disco.
+    if (p === '/_memoria' && req.method === 'GET') {
+      const d = Object.fromEntries(Object.values(linee).map((x) => [x.id, x.mem.esporta()]));
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      return res.end(JSON.stringify(d, BufferJSON.replacer));
+    }
+    if (p === '/_memoria' && req.method === 'POST') {
+      const d = await corpo(req, 200 * 1024 * 1024);
+      const n = Object.fromEntries(Object.values(linee).map((x) => [x.id, x.mem.importa(d[x.id])]));
+      log('memoria ripresa dal servizio precedente: ' + JSON.stringify(n));
+      return invia(res, 200, { ok: true, chat: n });
+    }
 
     if (p === '/health')
       return invia(res, 200, { ok: true, ...sintesi(L), modello: MODELLO, linee: Object.fromEntries(Object.values(linee).map((x) => [x.id, sintesi(x)])) });
@@ -299,7 +393,8 @@ const server = http.createServer(async (req, res) => {
     if (p === '/chat') {
       const c = L.mem.chats.get(L.mem.jidChat(url.searchParams.get('jid') || ''));
       if (!c) return invia(res, 404, { error: 'Chat non trovata (forse è vecchia: arriverà col prossimo messaggio).' });
-      return invia(res, 200, { jid: c.jid, nome: L.mem.nomeDi(c), messaggi: c.messaggi });
+      const messaggi = c.messaggi.map((m) => (m.allegato ? { ...m, allegato: { ...m.allegato, url: indirizzoAllegato(L.id, c.jid, m.id) } } : m));
+      return invia(res, 200, { jid: c.jid, nome: L.mem.nomeDi(c), messaggi });
     }
     if (p === '/ai' && req.method === 'POST') {
       const b = await corpo(req);
