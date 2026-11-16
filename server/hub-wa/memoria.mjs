@@ -116,5 +116,5 @@ export function creaMemoria() {
     return jid;
   }
 
-  return { chats, jidChat, imparaLid, imparaDaContatto, ricorda, nomeDi, senzaNome: () => [...chats.values()].filter((c) => !nomeDa(rubrica, c.jid) && !c.nome && !nomeDa(notify, c.jid)).length, svuota: () => { chats.clear(); lidPn.clear(); rubrica.clear(); notify.clear(); } };
+  return { chats, jidChat, imparaLid, imparaDaContatto, ricorda, nomeDi, nomiInRubrica: () => rubrica.size, senzaNome: () => [...chats.values()].filter((c) => !nomeDa(rubrica, c.jid) && !c.nome && !nomeDa(notify, c.jid)).length, svuota: () => { chats.clear(); lidPn.clear(); rubrica.clear(); notify.clear(); } };
 }

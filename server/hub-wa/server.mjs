@@ -24,6 +24,17 @@ const OLLAMA = process.env.HUB_WA_OLLAMA || 'http://100.87.233.111:11434';
 const MODELLO = process.env.HUB_WA_MODEL || 'nemotron35:latest';
 
 mkdirSync(BASE, { recursive: true, mode: 0o700 });
+
+// Un errore di rete in uno scaricamento (es. storico da WhatsApp) non deve far cadere tutto il servizio:
+// le chat stanno solo in RAM e si perderebbero. Lo scriviamo nel registro e andiamo avanti.
+// Solo «porta già occupata» chiude davvero (c'è già un altro hub-wa acceso).
+process.on('uncaughtException', (e) => {
+  try { appendFileSync(path.join(BASE, 'hub-wa.log'), new Date().toISOString() + ' errore non gestito, continuo: ' + (e?.code || '') + ' ' + (e?.message || e) + '\n'); } catch {}
+  if (e?.code === 'EADDRINUSE') process.exit(1);
+});
+process.on('unhandledRejection', (e) => {
+  try { appendFileSync(path.join(BASE, 'hub-wa.log'), new Date().toISOString() + ' promessa rifiutata, continuo: ' + (e?.message || e) + '\n'); } catch {}
+});
 if (!existsSync(TOKEN_FILE)) writeFileSync(TOKEN_FILE, randomBytes(24).toString('hex'), { mode: 0o600 });
 const TOKEN = readFileSync(TOKEN_FILE, 'utf8').trim();
 
@@ -77,18 +88,16 @@ async function avvia(L) {
       L.qr = '';
       L.numero = (sock.user?.id || '').replace(/:.*@/, '@').replace(/@.*/, '');
       log('collegato ' + L.id);
-      // Se dopo un po' quasi nessuna chat ha un nome (sincronizzazione interrotta), chiediamo di nuovo
-      // la rubrica a WhatsApp, una volta sola: è la stessa sincronizzazione che fa WhatsApp Web.
+      // I nomi della rubrica WhatsApp li manda solo al primo collegamento: dopo un riavvio del servizio
+      // (memoria solo RAM) li chiediamo di nuovo, una volta per avvio, come fa WhatsApp Web.
       setTimeout(() => {
-        const tot = L.mem.chats.size;
-        const senza = L.mem.senzaNome();
-        if (L.sock !== sock || L.rubricaChiesta || tot < 5 || senza < tot * 0.8) return;
+        if (L.sock !== sock || L.rubricaChiesta || L.mem.nomiInRubrica() > 0) return;
         L.rubricaChiesta = true;
-        log('nomi mancanti ' + L.id + ' (' + senza + '/' + tot + '): risincronizzo la rubrica');
+        log('rubrica vuota ' + L.id + ': la chiedo a WhatsApp');
         Promise.resolve(sock.resyncAppState?.(['critical_unblock_low'], true))
-          .then(() => log('rubrica ' + L.id + ': ora senza nome ' + L.mem.senzaNome() + '/' + L.mem.chats.size))
+          .then(() => log('rubrica ' + L.id + ': ' + L.mem.nomiInRubrica() + ' nomi'))
           .catch((e) => log('rubrica ' + L.id + ' non riuscita: ' + (e?.message || e)));
-      }, 30000);
+      }, 20000);
     }
     if (u.connection === 'close') {
       const motivo = new Boom(u.lastDisconnect?.error)?.output?.statusCode;
