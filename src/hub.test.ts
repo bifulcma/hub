@@ -289,3 +289,25 @@ describe('provaPonte', () => {
     expect(f.mock.calls[0][1].headers.Authorization).toBe('Bearer abc');
   });
 });
+
+import { avatar, COLORI_AVATAR, iniziali } from './avatar';
+describe('icone delle persone', () => {
+  it('iniziali: due parole → due lettere, una parola → una, emoji ignorate', () => {
+    expect(iniziali('Paolo Bifulco')).toBe('PB');
+    expect(iniziali('martina')).toBe('M');
+    expect(iniziali('Carlo Bruno Bifulco')).toBe('CB');
+    expect(iniziali('🌸 Vane Viola')).toBe('VV');
+    expect(iniziali('Élodie')).toBe('É');
+  });
+  it('colore fisso per numero, diverso tra persone diverse', () => {
+    const a = avatar('martina', '391111111111@s.whatsapp.net');
+    expect(avatar('Martina B.', '391111111111@s.whatsapp.net').colore).toBe(a.colore); // cambia il nome, non il colore
+    const colori = new Set(Array.from({ length: 40 }, (_, i) => avatar('X', `39${1000 + i}@s.whatsapp.net`).colore));
+    expect(colori.size).toBeGreaterThan(8);
+    expect(COLORI_AVATAR).toContain(a.colore);
+  });
+  it('senza nome (solo numero): icona neutra', () => {
+    expect(avatar('+33640628502', '33640628502@s.whatsapp.net')).toEqual({ lettere: '', colore: '#8c847a', anonimo: true });
+    expect(avatar('Contatto senza nome', 'x@lid').anonimo).toBe(true);
+  });
+});

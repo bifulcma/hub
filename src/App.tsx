@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { provaPonte } from './ponte';
+import { avatar } from './avatar';
 import { chiediIA, contesto, iaPronta, collegaDalMini, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, paginaCollega, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, waScollega, type ChatBreve, type Conversazione, type Linea } from './wa';
 import {
   AZIONI,
@@ -359,7 +360,7 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
         {filtrate.map((c) => (
           <li key={c.jid}>
             <button className="riga-chat" data-testid="riga-chat" onClick={() => apriChat(c)}>
-              <span className="avatar">{(c.nome.replace(/[^\p{L}\p{N}]/gu, '')[0] || '?').toUpperCase()}</span>
+              <Avatar nome={c.nome} jid={c.jid} />
               <span className="corpo-chat">
                 <span className="nome-chat">{c.nome}</span>
                 <span className="ultimo">{c.daMe ? 'Tu: ' : ''}{c.ultimo}</span>
@@ -370,6 +371,22 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
         ))}
       </ul>
     </section>
+  );
+}
+
+function Avatar({ nome, jid }: { nome: string; jid: string }) {
+  const a = avatar(nome, jid);
+  return (
+    <span className="avatar" style={{ background: a.colore }} aria-hidden="true">
+      {a.anonimo ? (
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+          <circle cx="12" cy="8.5" r="4" />
+          <path d="M4 20c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5z" />
+        </svg>
+      ) : (
+        a.lettere
+      )}
+    </span>
   );
 }
 
