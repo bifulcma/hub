@@ -327,3 +327,14 @@ describe('allegati in HUB', () => {
     expect(dimensione(1500000)).toBe('1,4 MB');
   });
 });
+
+describe('gruppi in HUB', () => {
+  it('il contesto per Nemotron dice chi ha scritto cosa', () => {
+    const c = { jid: 'g@g.us', nome: 'Famiglia', gruppo: true, messaggi: [
+      { id: '1', daMe: false, testo: 'ci vediamo domenica?', ts: 1, autore: 'Paolo' },
+      { id: '2', daMe: false, testo: 'io ci sono', ts: 2, autore: 'Chiara' },
+      { id: '3', daMe: true, testo: 'anche io', ts: 3 },
+    ] };
+    expect(contesto(c)).toBe('Paolo: ci vediamo domenica?\nChiara: io ci sono\nMarco: anche io');
+  });
+});

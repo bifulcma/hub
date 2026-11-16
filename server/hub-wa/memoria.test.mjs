@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { allegatoDi, creaMemoria, nomeChat, testoDi } from './memoria.mjs';
 
-let chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome, grezzo, esporta, importa;
+let chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome, grezzo, esporta, importa, nomePersona, nomeGruppo;
 
 const PN = '391234567890@s.whatsapp.net';
 const LID = '219876543210987@lid';
@@ -14,7 +14,7 @@ const msg = (id, remoteJid, testo, extra = {}) => ({
 });
 
 beforeEach(() => {
-  ({ chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome, grezzo, esporta, importa } = creaMemoria());
+  ({ chats, imparaDaContatto, imparaLid, jidChat, ricorda, nomeDi, senzaNome, grezzo, esporta, importa, nomePersona, nomeGruppo } = creaMemoria());
 });
 
 describe('memoria hub-wa: codice nascosto (@lid) e numero', () => {
@@ -57,8 +57,9 @@ describe('memoria hub-wa: codice nascosto (@lid) e numero', () => {
     expect(nomeChat({ jid: LID, nome: 'Anna' })).toBe('Anna');
   });
 
-  it('ignora gruppi e dati sbagliati', () => {
-    expect(ricorda(msg('e1', '123-456@g.us', 'gruppo'))).toBe('');
+  it('ignora stati, canali e dati sbagliati', () => {
+    expect(ricorda(msg('e1', 'status@broadcast', 'stato'))).toBe('');
+    expect(ricorda(msg('e2', '123@newsletter', 'canale'))).toBe('');
     imparaLid(PN, LID); // al contrario: ignorato
     expect(jidChat(PN)).toBe(PN);
     expect(chats.size).toBe(0);
@@ -141,5 +142,43 @@ describe('allegati: foto e documenti a richiesta', () => {
     expect(nuova.nomeDi(c)).toBe('Martina');
     expect(nuova.grezzo(PN, 'f2')).not.toBeNull();
     expect(nuova.importa(null)).toBe(0);
+  });
+});
+
+const G = '120363000000000001@g.us';
+const inGruppo = (id, participant, testo, extra = {}) => ({
+  key: { id, remoteJid: G, participant, fromMe: false, ...extra },
+  pushName: extra.fromMe ? undefined : 'Paolo WA',
+  messageTimestamp: 3000 + Number(id.replace(/\D/g, '') || 0),
+  message: { conversation: testo },
+});
+
+describe('gruppi', () => {
+  it('i gruppi entrano nella lista; stati e broadcast no', () => {
+    ricorda(inGruppo('g1', PN, 'ciao a tutti'));
+    expect(chats.has(G)).toBe(true);
+    expect(ricorda({ key: { id: 's', remoteJid: 'status@broadcast' }, message: { conversation: 'x' } })).toBe('');
+  });
+  it('il nome del gruppo non diventa quello di chi scrive', () => {
+    ricorda(inGruppo('g2', PN, 'ehi'));
+    expect(nomeDi(chats.get(G))).toBe('Gruppo senza nome');
+    nomeGruppo(G, 'Famiglia');
+    expect(nomeDi(chats.get(G))).toBe('Famiglia');
+  });
+  it('ricorda chi ha scritto: rubrica, poi nome WhatsApp, anche col codice nascosto', () => {
+    ricorda(inGruppo('g3', LID, 'sono io', { participantAlt: PN }));
+    const m = chats.get(G).messaggi[0];
+    expect(m.autore).toBe(LID);
+    expect(nomePersona(m.autore, m.autoreNome)).toBe('Paolo WA');
+    imparaDaContatto({ id: PN, name: 'Paolo Bifulco' });
+    expect(nomePersona(m.autore, m.autoreNome)).toBe('Paolo Bifulco');
+  });
+  it('i miei messaggi nel gruppo non hanno autore; nome del gruppo passa all\'aggiornamento', () => {
+    ricorda(inGruppo('g4', undefined, 'rispondo io', { fromMe: true }));
+    expect(chats.get(G).messaggi[0].autore).toBeUndefined();
+    nomeGruppo(G, 'Famiglia');
+    const nuova = creaMemoria();
+    nuova.importa(JSON.parse(JSON.stringify(esporta())));
+    expect(nuova.nomeDi(nuova.chats.get(G))).toBe('Famiglia');
   });
 });

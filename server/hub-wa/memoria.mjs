@@ -7,6 +7,9 @@ export const MAX_CHAT = 150;
 export const MAX_MSG = 40;
 
 export const chatSingola = (jid) => !!jid && (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid'));
+export const gruppo = (jid) => !!jid && jid.endsWith('@g.us');
+/** Chat che HUB mostra: persone singole e gruppi (mai stati, canali o liste broadcast). */
+export const chatValida = (jid) => chatSingola(jid) || gruppo(jid);
 const soloUtente = (j) => String(j || '').replace(/:\d+(?=@)/, ''); // toglie il «:dispositivo»
 
 const vistaUnica = (c) => c?.viewOnceMessage || c?.viewOnceMessageV2 || c?.viewOnceMessageV2Extension;
@@ -52,7 +55,7 @@ export function testoDi(m) {
 }
 
 /** Nome da mostrare: mai il codice nascosto spacciato per numero. */
-export const nomeChat = (c) => c.nome || (c.jid.endsWith('@lid') ? 'Contatto senza nome' : '+' + c.jid.replace(/@.*/, ''));
+export const nomeChat = (c) => c.nome || (gruppo(c.jid) ? 'Gruppo senza nome' : c.jid.endsWith('@lid') ? 'Contatto senza nome' : '+' + c.jid.replace(/@.*/, ''));
 
 
 /** Una memoria per ogni numero collegato (Personale, Business): chat e «chi è chi», solo RAM. */
@@ -62,6 +65,7 @@ export function creaMemoria() {
   // Nomi, anche se arrivano PRIMA della chat: rubrica del telefono (vince) e nome scelto dalla persona.
   const rubrica = new Map(); // jid -> nome salvato in rubrica
   const notify = new Map(); // jid -> nome che la persona si è data su WhatsApp
+  const gruppi = new Map(); // jid del gruppo -> nome del gruppo (da quello che WhatsApp manda già: niente richieste in più)
   // Messaggi originali con allegato (servono per scaricarlo a richiesta): solo RAM, solo quelli ancora in lista.
   const grezzi = new Map(); // id -> { key, message, messageTimestamp }
   const togli = (lista) => { for (const x of lista) grezzi.delete(x.id); };
@@ -94,9 +98,20 @@ export function creaMemoria() {
   }
   const nomeDa = (mappa, j) => mappa.get(j) || [...lidPn].filter(([, pn]) => pn === j).map(([lid]) => mappa.get(lid)).find(Boolean) || '';
 
-  /** Nome da mostrare: rubrica, poi nome WhatsApp, poi numero; mai il codice nascosto. */
+  /** Nome da mostrare: rubrica, poi nome WhatsApp, poi numero; mai il codice nascosto. Gruppi: il loro nome. */
   function nomeDi(c) {
+    if (gruppo(c.jid)) return gruppi.get(c.jid) || nomeChat(c);
     return nomeDa(rubrica, c.jid) || c.nome || nomeDa(notify, c.jid) || nomeChat(c);
+  }
+  /** Chi ha scritto un messaggio in un gruppo: rubrica, poi nome WhatsApp del messaggio, poi numero. */
+  function nomePersona(jid, ripiego = '') {
+    const j = jidChat(jid);
+    if (!j) return ripiego || 'Qualcuno';
+    return nomeDa(rubrica, j) || ripiego || nomeDa(notify, j) || nomeChat({ jid: j, nome: '' });
+  }
+  function nomeGruppo(jid, nome) {
+    const n = String(nome || '').trim();
+    if (gruppo(jid) && n) gruppi.set(jid, n);
   }
 
   /** Dalla rubrica/storico: un contatto può portare sia il codice nascosto sia il numero. */
@@ -117,11 +132,19 @@ export function creaMemoria() {
   function ricorda(m) {
     const k = m?.key || {};
     const grezzo = soloUtente(k.remoteJid);
-    if (!chatSingola(grezzo)) return '';
+    if (!chatValida(grezzo)) return '';
+    const inGruppo = gruppo(grezzo);
     const alt = soloUtente(k.remoteJidAlt);
-    if (alt) {
+    if (alt && !inGruppo) {
       if (grezzo.endsWith('@lid')) imparaLid(grezzo, alt);
       else imparaLid(alt, grezzo);
+    }
+    // Nei gruppi: chi ha scritto (anche lui può avere numero e codice nascosto).
+    const autore = inGruppo && !k.fromMe ? soloUtente(k.participant) : '';
+    const autoreAlt = inGruppo ? soloUtente(k.participantAlt || k.participantPn) : '';
+    if (autore && autoreAlt) {
+      if (autore.endsWith('@lid')) imparaLid(autore, autoreAlt);
+      else imparaLid(autoreAlt, autore);
     }
     const jid = jidChat(grezzo);
     const testo = testoDi(m).trim();
@@ -132,10 +155,14 @@ export function creaMemoria() {
       c = { jid, nome: '', messaggi: [], ts: 0 };
       chats.set(jid, c);
     }
-    if (!k.fromMe && m.pushName) c.nome = m.pushName;
+    if (!k.fromMe && m.pushName && !inGruppo) c.nome = m.pushName;
     if (c.messaggi.some((x) => x.id === k.id)) return jid;
     const allegato = allegatoDi(m);
-    c.messaggi.push({ id: k.id, daMe: !!k.fromMe, testo: testo.slice(0, 4000), ts, ...(allegato ? { allegato } : {}) });
+    c.messaggi.push({
+      id: k.id, daMe: !!k.fromMe, testo: testo.slice(0, 4000), ts,
+      ...(allegato ? { allegato } : {}),
+      ...(autore ? { autore, autoreNome: String(m.pushName || '').slice(0, 100) } : {}),
+    });
     if (allegato) grezzi.set(k.id, { key: m.key, message: m.message, messageTimestamp: m.messageTimestamp });
     c.messaggi.sort((a, b) => a.ts - b.ts);
     if (c.messaggi.length > MAX_MSG) togli(c.messaggi.splice(0, c.messaggi.length - MAX_MSG));
@@ -159,7 +186,7 @@ export function creaMemoria() {
 
   /** Tutta la memoria, per passarla al servizio nuovo durante un aggiornamento (da RAM a RAM, mai su disco). */
   function esporta() {
-    return { chats: [...chats.values()], lidPn: [...lidPn], rubrica: [...rubrica], notify: [...notify], grezzi: [...grezzi] };
+    return { chats: [...chats.values()], lidPn: [...lidPn], rubrica: [...rubrica], notify: [...notify], grezzi: [...grezzi], gruppi: [...gruppi] };
   }
   /** Riprende la memoria passata dal servizio vecchio, senza perdere quello che è già arrivato. */
   function importa(d) {
@@ -168,6 +195,7 @@ export function creaMemoria() {
     for (const [a, b] of d.rubrica || []) if (!rubrica.has(a)) rubrica.set(a, b);
     for (const [a, b] of d.notify || []) if (!notify.has(a)) notify.set(a, b);
     for (const [a, b] of d.grezzi || []) if (!grezzi.has(a)) grezzi.set(a, b);
+    for (const [a, b] of d.gruppi || []) if (!gruppi.has(a)) gruppi.set(a, b);
     let n = 0;
     for (const v of d.chats || []) {
       if (!v?.jid || !Array.isArray(v.messaggi)) continue;
@@ -187,9 +215,9 @@ export function creaMemoria() {
   }
 
   return {
-    chats, jidChat, imparaLid, imparaDaContatto, ricorda, nomeDi, grezzo, esporta, importa,
+    chats, jidChat, imparaLid, imparaDaContatto, ricorda, nomeDi, nomePersona, nomeGruppo, grezzo, esporta, importa,
     nomiInRubrica: () => rubrica.size,
-    senzaNome: () => [...chats.values()].filter((c) => !nomeDa(rubrica, c.jid) && !c.nome && !nomeDa(notify, c.jid)).length,
-    svuota: () => { chats.clear(); lidPn.clear(); rubrica.clear(); notify.clear(); grezzi.clear(); },
+    senzaNome: () => [...chats.values()].filter((c) => !gruppo(c.jid) && !nomeDa(rubrica, c.jid) && !c.nome && !nomeDa(notify, c.jid)).length,
+    svuota: () => { chats.clear(); lidPn.clear(); rubrica.clear(); notify.clear(); grezzi.clear(); gruppi.clear(); },
   };
 }

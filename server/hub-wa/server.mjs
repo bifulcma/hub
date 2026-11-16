@@ -121,10 +121,20 @@ async function avvia(L) {
   sock.ev.on('messaging-history.set', ({ chats: cs = [], contacts = [], messages = [] }) => {
     for (const k of contacts) imparaDaContatto(k);
     for (const m of messages) ricordaERisolvi(L, m);
-    for (const ch of cs) if (ch.name && !String(ch.id).endsWith('@g.us')) imparaDaContatto({ id: ch.id, notify: ch.name });
+    for (const ch of cs) {
+      if (!ch.name) continue;
+      if (String(ch.id).endsWith('@g.us')) L.mem.nomeGruppo(ch.id, ch.name);
+      else imparaDaContatto({ id: ch.id, notify: ch.name });
+    }
   });
   sock.ev.on('contacts.upsert', (cs) => { for (const k of cs) imparaDaContatto(k); log('contatti ricevuti ' + L.id + ': ' + cs.length + ' (con nome in rubrica ' + L.mem.nomiInRubrica() + ')'); });
   sock.ev.on('contacts.update', (cs) => { for (const k of cs) imparaDaContatto(k); });
+  // Nomi dei gruppi: solo da quello che WhatsApp manda da sé (niente richieste in più).
+  const nomiGruppi = (lista) => { for (const g of lista || []) L.mem.nomeGruppo(g.id, g.subject || g.name); };
+  sock.ev.on('groups.upsert', nomiGruppi);
+  sock.ev.on('groups.update', nomiGruppi);
+  sock.ev.on('chats.upsert', nomiGruppi);
+  sock.ev.on('chats.update', nomiGruppi);
   sock.ev.on('lid-mapping.update', (x) => {
     for (const { lid, pn } of Array.isArray(x) ? x : [x]) imparaLid(lid, pn);
   });
@@ -386,15 +396,24 @@ const server = http.createServer(async (req, res) => {
         .sort((a, b) => b.ts - a.ts)
         .map((c) => {
           const u = c.messaggi[c.messaggi.length - 1];
-          return { jid: c.jid, nome: L.mem.nomeDi(c), ultimo: u?.testo.slice(0, 120) || '', daMe: !!u?.daMe, ts: c.ts };
+          const gr = c.jid.endsWith('@g.us');
+          const chi = gr && u && !u.daMe ? L.mem.nomePersona(u.autore, u.autoreNome) + ': ' : '';
+          return { jid: c.jid, nome: L.mem.nomeDi(c), ultimo: (chi + (u?.testo || '')).slice(0, 120), daMe: !!u?.daMe, ts: c.ts, ...(gr ? { gruppo: true } : {}) };
         });
       return invia(res, 200, { stato: L.stato, chats: lista });
     }
     if (p === '/chat') {
       const c = L.mem.chats.get(L.mem.jidChat(url.searchParams.get('jid') || ''));
       if (!c) return invia(res, 404, { error: 'Chat non trovata (forse è vecchia: arriverà col prossimo messaggio).' });
-      const messaggi = c.messaggi.map((m) => (m.allegato ? { ...m, allegato: { ...m.allegato, url: indirizzoAllegato(L.id, c.jid, m.id) } } : m));
-      return invia(res, 200, { jid: c.jid, nome: L.mem.nomeDi(c), messaggi });
+      const gr = c.jid.endsWith('@g.us');
+      const messaggi = c.messaggi.map((m) => {
+        const { autoreNome, ...x } = m;
+        if (m.allegato) x.allegato = { ...m.allegato, url: indirizzoAllegato(L.id, c.jid, m.id) };
+        if (gr && !m.daMe) x.autore = L.mem.nomePersona(m.autore, autoreNome);
+        else delete x.autore;
+        return x;
+      });
+      return invia(res, 200, { jid: c.jid, nome: L.mem.nomeDi(c), messaggi, ...(gr ? { gruppo: true } : {}) });
     }
     if (p === '/ai' && req.method === 'POST') {
       const b = await corpo(req);

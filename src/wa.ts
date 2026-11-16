@@ -9,6 +9,7 @@ export interface ChatBreve {
   ultimo: string;
   daMe: boolean;
   ts: number;
+  gruppo?: boolean;
 }
 export interface Allegato {
   tipo: 'foto' | 'documento';
@@ -24,6 +25,8 @@ export interface Messaggio {
   testo: string;
   ts: number;
   allegato?: Allegato;
+  /** Nei gruppi: chi ha scritto (nome in rubrica o su WhatsApp). */
+  autore?: string;
 }
 
 /** Indirizzo completo di un allegato sul Mini, oppure '' se manca. */
@@ -39,6 +42,7 @@ export interface Conversazione {
   jid: string;
   nome: string;
   messaggi: Messaggio[];
+  gruppo?: boolean;
 }
 
 export class WaErrore extends Error {
@@ -134,7 +138,7 @@ export function iaPronta(i: Impostazioni): boolean {
 export function contesto(c: Conversazione, n = 12): string {
   return c.messaggi
     .slice(-n)
-    .map((m) => `${m.daMe ? 'Marco' : c.nome}: ${m.testo}`)
+    .map((m) => `${m.daMe ? 'Marco' : m.autore || c.nome}: ${m.testo}`)
     .join('\n');
 }
 

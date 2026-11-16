@@ -298,7 +298,7 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
       let l: string[];
       if (demo) l = await demoRispondi(linea, intenzione, c.signal);
       else {
-        const { system, prompt } = promptChat(profilo, aperta.nome, contesto(aperta), intenzione);
+        const { system, prompt } = promptChat(profilo, aperta.gruppo ? `il gruppo «${aperta.nome}» (più persone)` : aperta.nome, contesto(aperta), intenzione);
         l = leggiRisposte(await chiediIA(imp, { system, prompt, json: true, signal: c.signal }));
       }
       if (!c.signal.aborted) setRisposte(l);
@@ -320,6 +320,7 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
           {aperta.messaggi.length === 0 && <p className="vuoto">Carico i messaggi…</p>}
           {aperta.messaggi.slice(-15).map((m) => (
             <div key={m.id} className={`bolla ${m.daMe ? 'mia' : 'sua'}`}>
+              {m.autore && <div className="autore">{m.autore}</div>}
               {m.allegato ? <BollaAllegato m={m} url={indirizzoAllegato(imp, m.allegato)} /> : m.testo}
               <span className="ora">{oraBreve(m.ts)}</span>
             </div>
@@ -361,7 +362,7 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
         {filtrate.map((c) => (
           <li key={c.jid}>
             <button className="riga-chat" data-testid="riga-chat" onClick={() => apriChat(c)}>
-              <Avatar nome={c.nome} jid={c.jid} />
+              <Avatar nome={c.nome} jid={c.jid} gruppo={!!c.gruppo} />
               <span className="corpo-chat">
                 <span className="nome-chat">{c.nome}</span>
                 <span className="ultimo">{c.daMe ? 'Tu: ' : ''}{c.ultimo}</span>
@@ -408,11 +409,17 @@ function BollaAllegato({ m, url }: { m: Messaggio; url: string }) {
   );
 }
 
-function Avatar({ nome, jid }: { nome: string; jid: string }) {
-  const a = avatar(nome, jid);
+function Avatar({ nome, jid, gruppo }: { nome: string; jid: string; gruppo?: boolean }) {
+  const a = avatar(gruppo ? nome || 'Gruppo' : nome, jid);
   return (
-    <span className="avatar" style={{ background: a.colore }} aria-hidden="true">
-      {a.anonimo ? (
+    <span className="avatar" style={{ background: gruppo ? avatar('G', jid).colore : a.colore }} aria-hidden="true">
+      {gruppo ? (
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+          <circle cx="8.5" cy="9" r="3.2" />
+          <circle cx="15.5" cy="9" r="3.2" />
+          <path d="M2.5 19c0-3.3 2.7-5.2 6-5.2 1.3 0 2.5.3 3.5.9 1-.6 2.2-.9 3.5-.9 3.3 0 6 1.9 6 5.2z" />
+        </svg>
+      ) : a.anonimo ? (
         <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
           <circle cx="12" cy="8.5" r="4" />
           <path d="M4 20c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5z" />
