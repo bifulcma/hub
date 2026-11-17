@@ -338,3 +338,27 @@ describe('gruppi in HUB', () => {
     expect(contesto(c)).toBe('Paolo: ci vediamo domenica?\nChiara: io ci sono\nMarco: anche io');
   });
 });
+
+import { conInizio, nuovo, quantiNuovi, segnaVisto, type Visti } from './nuovi';
+describe('avviso messaggi nuovi (solo sul dispositivo)', () => {
+  const c = (jid: string, ts: number, daMe = false) => ({ jid, nome: jid, ultimo: 'x', daMe, ts });
+  it('al primo avvio niente è nuovo', () => {
+    let v: Visti = { inizio: {}, chat: {} };
+    const lista = [c('a', 100), c('b', 200)];
+    v = conInizio(v, 'personale', lista, 150);
+    expect(quantiNuovi(v, 'personale', lista)).toBe(0);
+  });
+  it('un messaggio arrivato dopo è nuovo; aprendo la chat non lo è più', () => {
+    let v: Visti = { inizio: { personale: 1000 }, chat: {} };
+    expect(nuovo(v, 'personale', c('a', 1500))).toBe(true);
+    v = segnaVisto(v, 'personale', 'a', 1500);
+    expect(nuovo(v, 'personale', c('a', 1500))).toBe(false);
+    expect(nuovo(v, 'personale', c('a', 1600))).toBe(true);
+  });
+  it('se l’ultimo messaggio è mio non è nuovo; le linee sono separate', () => {
+    const v: Visti = { inizio: { personale: 1000, business: 1000 }, chat: { 'personale|a': 2000 } };
+    expect(nuovo(v, 'personale', c('a', 3000, true))).toBe(false);
+    expect(nuovo(v, 'business', c('a', 1500))).toBe(true);
+    expect(nuovo({ inizio: {}, chat: {} }, 'business', c('a', 1500))).toBe(false); // linea mai vista: niente pallini
+  });
+});

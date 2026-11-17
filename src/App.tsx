@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { provaPonte } from './ponte';
 import { avatar } from './avatar';
+import { caricaVisti, conInizio, nuovo, quantiNuovi, salvaVisti, segnaVisto, type Visti } from './nuovi';
 import { dimensione, indirizzoAllegato, type Messaggio } from './wa';
 import { chiediIA, contesto, iaPronta, collegaDalMini, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, paginaCollega, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, waScollega, type ChatBreve, type Conversazione, type Linea } from './wa';
 import {
@@ -71,6 +72,38 @@ export default function App() {
   const [nuovaVersione, setNuovaVersione] = useState<null | (() => void)>(null);
   const [bozza, setBozza] = useState<string | null>(null); // anteprima con azioni finali
   const [destinatario, setDestinatario] = useState<Destinatario | null>(null);
+  // Messaggi nuovi: liste delle due linee (dal Mini) e cosa hai già visto (solo su questo dispositivo).
+  const [liste, setListe] = useState<Record<Linea, ChatBreve[]>>({ personale: [], business: [] });
+  const [visti, setVisti] = useState<Visti>(caricaVisti);
+  const riporta = (linea: Linea, lista: ChatBreve[]) => {
+    setListe((x) => ({ ...x, [linea]: lista }));
+    setVisti((v) => conInizio(v, linea, lista));
+  };
+  const segna = (linea: Linea, jid: string, ts: number) => setVisti((v) => segnaVisto(v, linea, jid, ts));
+  useEffect(() => salvaVisti(visti), [visti]);
+  useEffect(() => {
+    const imp = stato.impostazioni;
+    if (!waConfigurato(imp)) return;
+    const giro = () => {
+      if (document.visibilityState !== 'visible') return;
+      for (const l of ['personale', 'business'] as Linea[])
+        waChats(imp, l)
+          .then((r) => riporta(l, r.stato === 'spento' ? [] : r.chats))
+          .catch(() => {});
+    };
+    giro();
+    const t = window.setInterval(giro, 15000);
+    document.addEventListener('visibilitychange', giro);
+    return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', giro); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stato.impostazioni.waUrl, stato.impostazioni.waToken]);
+  const nuoviPer: Record<Linea, number> = { personale: quantiNuovi(visti, 'personale', liste.personale), business: quantiNuovi(visti, 'business', liste.business) };
+  const nuoviTot = nuoviPer.personale + nuoviPer.business;
+  useEffect(() => {
+    document.title = nuoviTot ? `(${nuoviTot}) HUB` : 'HUB';
+    const n = navigator as Navigator & { setAppBadge?: (x?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+    (nuoviTot ? n.setAppBadge?.(nuoviTot) : n.clearAppBadge?.())?.catch?.(() => {});
+  }, [nuoviTot]);
   useEffect(() => {
     if (appenaCollegato) {
       appenaCollegato = false;
@@ -122,6 +155,7 @@ export default function App() {
           {(['personale', 'business'] as ProfiloId[]).map((id) => (
             <button key={id} role="tab" aria-selected={stato.attivo === id} className={`seg seg-${id} ${stato.attivo === id ? 'attivo' : ''}`} onClick={() => cambiaProfilo(id)}>
               {stato.profili[id].nome}
+              {nuoviPer[id] > 0 && <span className="pallino" aria-label={`${nuoviPer[id]} chat con messaggi nuovi`} />}
             </button>
           ))}
         </div>
@@ -133,7 +167,7 @@ export default function App() {
       </header>
 
       <main className="contenuto">
-        {pagina === 'chat' && <Chat stato={stato} setStato={setStato} avvisa={avvisa} demo={demo} apri={apriBozza} />}
+        {pagina === 'chat' && <Chat stato={stato} setStato={setStato} avvisa={avvisa} demo={demo} apri={apriBozza} visti={visti} riporta={riporta} segna={segna} />}
         {pagina === 'rispondi' && <Rispondi stato={stato} demo={demo} apri={(t) => apriBozza(t)} avvisa={avvisa} />}
         {pagina === 'scrivi' && <Scrivi stato={stato} setStato={setStato} demo={demo} apri={(t) => apriBozza(t)} avvisa={avvisa} />}
         {pagina === 'pronti' && <Pronti stato={stato} setStato={setStato} apri={(t) => apriBozza(t)} />}
@@ -143,7 +177,10 @@ export default function App() {
       <nav className="schede" aria-label="Sezioni">
         {PAGINE.map((p) => (
           <button key={p} className={pagina === p ? 'attiva' : ''} onClick={() => vai(p)} aria-current={pagina === p ? 'page' : undefined}>
-            <Icona nome={p} />
+            <span className="icona-scheda">
+              <Icona nome={p} />
+              {p === 'chat' && nuoviTot > 0 && <span className="numerino">{nuoviTot > 99 ? '99+' : nuoviTot}</span>}
+            </span>
             <span>{ETICHETTE[p]}</span>
           </button>
         ))}
@@ -189,7 +226,16 @@ function oraBreve(ts: number): string {
     : d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
 }
 
-function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato: React.Dispatch<React.SetStateAction<Stato>>; avvisa: (t: string) => void; demo: boolean; apri: (t: string, a?: Destinatario) => void }) {
+function Chat({ stato, setStato, avvisa, demo, apri, visti, riporta, segna }: {
+  stato: Stato;
+  setStato: React.Dispatch<React.SetStateAction<Stato>>;
+  avvisa: (t: string) => void;
+  demo: boolean;
+  apri: (t: string, a?: Destinatario) => void;
+  visti: Visti;
+  riporta: (l: Linea, lista: ChatBreve[]) => void;
+  segna: (l: Linea, jid: string, ts: number) => void;
+}) {
   const imp = stato.impostazioni;
   const linea: Linea = stato.attivo;
   const [statoLinea, setStatoLinea] = useState('');
@@ -210,6 +256,7 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
       const r = await waChats(imp, linea);
       if (linea !== stato.attivo) return;
       setLista(r.chats);
+      riporta(linea, r.stato === 'spento' ? [] : r.chats);
       setStatoLinea(r.stato);
       setErrore(
         r.stato === 'collegato' || r.stato === 'spento'
@@ -228,7 +275,11 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
     if (!jid) return;
     try {
       const c = await waChat(imp, jid, linea);
-      if (jidAperto.current === jid) setAperta(c);
+      if (jidAperto.current === jid) {
+        setAperta(c);
+        const ultimo = c.messaggi.reduce((m, x) => Math.max(m, x.ts), 0);
+        if (ultimo) segna(linea, jid, ultimo); // la stai guardando: già vista
+      }
     } catch (e) {
       setErrore(e instanceof Error ? e.message : String(e));
     }
@@ -273,6 +324,7 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
     );
 
   const apriChat = (c: ChatBreve) => {
+    segna(linea, c.jid, c.ts);
     jidAperto.current = c.jid;
     setAperta({ jid: c.jid, nome: c.nome, messaggi: [] });
     setRisposte([]);
@@ -361,13 +413,16 @@ function Chat({ stato, setStato, avvisa, demo, apri }: { stato: Stato; setStato:
       <ul className="lista-chat">
         {filtrate.map((c) => (
           <li key={c.jid}>
-            <button className="riga-chat" data-testid="riga-chat" onClick={() => apriChat(c)}>
+            <button className={`riga-chat ${nuovo(visti, linea, c) ? 'nuova' : ''}`} data-testid="riga-chat" onClick={() => apriChat(c)}>
               <Avatar nome={c.nome} jid={c.jid} gruppo={!!c.gruppo} />
               <span className="corpo-chat">
                 <span className="nome-chat">{c.nome}</span>
                 <span className="ultimo">{c.daMe ? 'Tu: ' : ''}{c.ultimo}</span>
               </span>
-              <span className="ora">{oraBreve(c.ts)}</span>
+              <span className="ora">
+                {oraBreve(c.ts)}
+                {nuovo(visti, linea, c) && <span className="pallino" aria-label="messaggio nuovo" />}
+              </span>
             </button>
           </li>
         ))}
