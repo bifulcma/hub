@@ -49,6 +49,8 @@ File principali:
 - **Aggiornare hub-wa senza perdere le chat** (da questa versione in poi): sul Mini, in UN solo comando ssh: `T=$(cat ~/.hermes/hub-wa/token); M=$(curl -s -H "Authorization: Bearer $T" http://127.0.0.1:8791/_memoria)` → copia i file → `launchctl kickstart -k gui/$(id -u)/com.marco.hub-wa` → attendi «collegato» → `printf %s "$M" | curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:8791/_memoria`. La memoria passa da RAM a RAM (variabile della shell), mai su disco. Chiedi comunque a Marco prima di riavviare. Provato il 16/11 sera installando i gruppi: 138+150 chat conservate. Prima di riavviare controlla che il servizio in esecuzione abbia `/_memoria` (dal 16/11 sì).
 - Gruppi (HUB 0.3.3): in lista, autore di ogni messaggio, nome del gruppo solo dagli eventi che WhatsApp manda da sé (niente groupFetchAllParticipating). Storico dei gruppi solo ricollegando col QR.
 
+- 17/11: avviso messaggi nuovi dentro HUB (0.3.4, solo sul dispositivo) e **notifiche Web Push** (0.3.5): Marco ha le notifiche di WhatsApp spente. File sul Mini: `vapid.json`, `notifiche.json` (0600, solo iscrizioni). Dipendenza `web-push` in `server/hub-wa/package.json` (dopo modifiche: copia package.json e `npm install --omit=dev` sul Mini). Nella notifica mai il testo. Da provare sui dispositivi veri.
+
 ## Possibili prossimi passi (chiedi a Marco quale, proponendo il primo)
 1. Notifica/contatore di messaggi nuovi nella scheda Chat (solo dentro l'app, niente push).
 2. Nella Chat: messaggi pronti del profilo inseribili con un tocco.
