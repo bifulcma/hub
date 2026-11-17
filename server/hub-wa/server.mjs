@@ -12,6 +12,8 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, appendFileSync, ren
 import path from 'node:path';
 import os from 'node:os';
 import { creaMemoria } from './memoria.mjs';
+import { creaNotifiche } from './notifiche.mjs';
+import webpush from 'web-push';
 import { LINEE, dopoChiusura, lineaDa, motivoBlocco } from './linee.mjs';
 
 const BASE = path.join(os.homedir(), '.hermes', 'hub-wa');
@@ -41,6 +43,20 @@ const TOKEN = readFileSync(TOKEN_FILE, 'utf8').trim();
 const log = (s) => {
   try { appendFileSync(LOG, `${new Date().toISOString()} ${s}\n`); } catch {}
 };
+
+// ------------------------------------------------------------------ Notifiche (Web Push via Apple)
+// Chiavi VAPID del Mini (create una volta) e iscrizioni dei dispositivi: file 0600, mai messaggi.
+const VAPID_FILE = path.join(BASE, 'vapid.json');
+const ISCRITTI_FILE = path.join(BASE, 'notifiche.json');
+if (!existsSync(VAPID_FILE)) writeFileSync(VAPID_FILE, JSON.stringify(webpush.generateVAPIDKeys()), { mode: 0o600 });
+const VAPID = JSON.parse(readFileSync(VAPID_FILE, 'utf8'));
+webpush.setVapidDetails('https://bifulcma.github.io/hub/', VAPID.publicKey, VAPID.privateKey);
+const notifiche = creaNotifiche({
+  invia: (sub, dati, opz) => webpush.sendNotification(sub, dati, opz),
+  leggi: () => (existsSync(ISCRITTI_FILE) ? JSON.parse(readFileSync(ISCRITTI_FILE, 'utf8')) : []),
+  scrivi: (d) => writeFileSync(ISCRITTI_FILE, JSON.stringify(d), { mode: 0o600 }),
+  log,
+});
 
 // ------------------------------------------------------------------ WhatsApp: una «linea» per numero
 // Ogni linea ha la sua sessione, il suo QR, la sua memoria (solo RAM) e le sue regole (linee.mjs).
@@ -138,21 +154,39 @@ async function avvia(L) {
   sock.ev.on('lid-mapping.update', (x) => {
     for (const { lid, pn } of Array.isArray(x) ? x : [x]) imparaLid(lid, pn);
   });
-  sock.ev.on('messages.upsert', ({ messages }) => {
-    for (const m of messages) ricordaERisolvi(L, m);
+  sock.ev.on('messages.upsert', ({ messages, type }) => {
+    for (const m of messages) {
+      const jid = ricordaERisolvi(L, m);
+      if (type === 'notify' && jid && !m.key?.fromMe) avvisaNuovo(L, jid, m);
+    }
   });
 }
 
 // Se una chat resta col codice nascosto, chiediamo a Baileys il numero (solo in RAM).
 function ricordaERisolvi(L, m) {
   const jid = L.mem.ricorda(m);
-  if (!jid.endsWith('@lid') || L.giaChiesti.has(jid)) return;
+  if (!jid.endsWith('@lid') || L.giaChiesti.has(jid)) return jid;
   L.giaChiesti.add(jid);
   const mappa = L.sock?.signalRepository?.lidMapping;
   if (!mappa?.getPNForLID) return;
   Promise.resolve(mappa.getPNForLID(jid))
     .then((pn) => { if (pn) L.mem.imparaLid(jid, pn); })
     .catch(() => {});
+  return jid;
+}
+
+/** Notifica di un messaggio appena arrivato (non quelli vecchi recuperati dopo un riavvio). */
+function avvisaNuovo(L, jid, m) {
+  const ts = Number(m.messageTimestamp?.low ?? m.messageTimestamp ?? 0) * 1000;
+  if (ts && Date.now() - ts > 10 * 60 * 1000) return;
+  const c = L.mem.chats.get(L.mem.jidChat(jid));
+  if (!c) return;
+  const u = c.messaggi.find((x) => x.id === m.key.id);
+  if (!u) return;
+  const gruppo = c.jid.endsWith('@g.us');
+  notifiche
+    .nuovoMessaggio({ linea: L.id, jid: c.jid, nomeChat: L.mem.nomeDi(c), autore: gruppo ? L.mem.nomePersona(u.autore, u.autoreNome) : '', gruppo, allegato: u.allegato?.tipo })
+    .catch((e) => log('notifica: ' + (e?.message || e)));
 }
 
 /** Scollega davvero (anche dalla lista «Dispositivi collegati» del telefono) e cancella la sessione. */
@@ -432,6 +466,15 @@ const server = http.createServer(async (req, res) => {
       if (sent) ricordaERisolvi(Ls, sent);
       log('inviato 1 messaggio ' + Ls.id); // niente contenuto né destinatario nel registro
       return invia(res, 200, { ok: true });
+    }
+    if (p === '/notifiche/chiave') return invia(res, 200, { publicKey: VAPID.publicKey });
+    if (p.startsWith('/notifiche/') && req.method === 'POST') {
+      const b = await corpo(req);
+      const endpoint = String(b.sub?.endpoint || b.endpoint || '');
+      if (p === '/notifiche/iscrivi') return invia(res, 200, { ok: true, pref: notifiche.iscrivi(b.sub, b.pref || {}) });
+      if (p === '/notifiche/disiscrivi') return invia(res, 200, { ok: true, tolto: notifiche.disiscrivi(endpoint) });
+      if (p === '/notifiche/stato') return invia(res, 200, { pref: notifiche.preferenze(endpoint) });
+      if (p === '/notifiche/prova') return invia(res, 200, { ok: true, inviate: await notifiche.prova(endpoint) });
     }
     if (p === '/scollega' && req.method === 'POST') {
       await scollega(L);

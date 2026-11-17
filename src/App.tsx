@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { provaPonte } from './ponte';
 import { avatar } from './avatar';
 import { caricaVisti, conInizio, nuovo, quantiNuovi, salvaVisti, segnaVisto, type Visti } from './nuovi';
-import { dimensione, indirizzoAllegato, type Messaggio } from './wa';
+import { chiaveInByte, dimensione, indirizzoAllegato, waChiaveNotifiche, waNotifiche, type Messaggio, type PrefNotifiche } from './wa';
 import { chiediIA, contesto, iaPronta, collegaDalMini, leggiCollegamento, leggiCollegamentoDaTesto, nomeIA, paginaCollega, usaNemotron, waChat, waChats, waConfigurato, waInvia, waSalute, waScollega, type ChatBreve, type Conversazione, type Linea } from './wa';
 import {
   AZIONI,
@@ -114,7 +114,11 @@ export default function App() {
 
   useEffect(() => salva(stato), [stato]);
   useEffect(() => {
-    const f = () => setPagina(paginaDaHash());
+    const f = () => {
+      setPagina(paginaDaHash());
+      const p = leggiArrivo().profilo; // da una notifica: #/chat?p=business
+      if (p) setStato((s) => (s.attivo === p ? s : { ...s, attivo: p }));
+    };
     window.addEventListener('hashchange', f);
     return () => window.removeEventListener('hashchange', f);
   }, []);
@@ -811,6 +815,9 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
       <h2>WhatsApp Business (Mac mini)</h2>
       <StatoBusiness stato={stato} avvisa={avvisa} />
 
+      <h2>Notifiche</h2>
+      <Notifiche stato={stato} avvisa={avvisa} />
+
       <h2>Claude (ponte del Mac Studio)</h2>
       <label className="etichetta">Indirizzo del ponte<input value={stato.impostazioni.ponte} inputMode="url" autoCapitalize="off" autoCorrect="off" onChange={(e) => setImp('ponte', e.target.value)} /></label>
       <label className="etichetta">Token<input type="password" value={stato.impostazioni.token} placeholder="lo stesso di Penna e Tubo" autoComplete="off" onChange={(e) => setImp('token', e.target.value)} /></label>
@@ -852,6 +859,113 @@ function StatoWa({ stato, setStato, avvisa }: { stato: Stato; setStato: React.Di
         <button className="secondario" onClick={() => { if (confirm('Scollegare WhatsApp da HUB su questo dispositivo?')) { setStato((s) => ({ ...s, impostazioni: { ...s.impostazioni, waUrl: '', waToken: '' } })); avvisa('Scollegato'); } }}>Scollega</button>
         <span data-testid="esito-wa">{esito}</span>
       </div>
+    </>
+  );
+}
+
+// Notifiche: il Mac mini avvisa questo iPhone/iPad (tramite Apple) quando arriva un messaggio.
+// Solo chi ha scritto e su quale numero, mai il testo. Funziona solo con HUB aperto dall'icona.
+function Notifiche({ stato, avvisa }: { stato: Stato; avvisa: (t: string) => void }) {
+  const imp = stato.impostazioni;
+  const supporto = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const icona =
+    typeof window !== 'undefined' &&
+    (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true);
+  const [sub, setSub] = useState<PushSubscription | null>(null);
+  const [pref, setPref] = useState<PrefNotifiche | null>(null);
+  const [esito, setEsito] = useState('');
+  const [lavoro, setLavoro] = useState(false);
+  useEffect(() => {
+    if (!supporto || !waConfigurato(imp)) return;
+    navigator.serviceWorker.ready
+      .then((r) => r.pushManager.getSubscription())
+      .then(async (s) => {
+        setSub(s);
+        if (s) setPref((await waNotifiche<{ pref: PrefNotifiche | null }>(imp, 'stato', { endpoint: s.endpoint })).pref);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imp.waUrl, imp.waToken]);
+  if (!waConfigurato(imp)) return <p className="nota">Collega prima WhatsApp qui sopra.</p>;
+  if (!supporto) return <p className="nota">Questo browser non supporta le notifiche. Sull'iPhone/iPad servono iOS 16.4 o più e HUB aperto dall'icona.</p>;
+  if (!icona) return <p className="nota">Le notifiche funzionano solo con HUB aperto dall'<b>icona</b> sulla schermata Home (Condividi → Aggiungi alla schermata Home), non da Safari o Chrome.</p>;
+
+  const iscrivi = async (p: PrefNotifiche, s: PushSubscription) => {
+    const r = await waNotifiche<{ pref: PrefNotifiche }>(imp, 'iscrivi', { sub: s.toJSON(), pref: p });
+    setPref(r.pref);
+  };
+  const attiva = async () => {
+    setLavoro(true);
+    setEsito('');
+    try {
+      const permesso = await Notification.requestPermission();
+      if (permesso !== 'granted') {
+        setEsito('❌ Notifiche non permesse. Impostazioni dell’iPhone → Notifiche → HUB → Consenti notifiche.');
+        return;
+      }
+      const { publicKey } = await waChiaveNotifiche(imp);
+      const reg = await navigator.serviceWorker.ready;
+      const s = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chiaveInByte(publicKey) as BufferSource }));
+      await iscrivi(pref || { personale: true, business: true, gruppi: true }, s);
+      setSub(s);
+      avvisa('🔔 Notifiche attive su questo dispositivo');
+    } catch (e) {
+      setEsito('❌ ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setLavoro(false);
+    }
+  };
+  const cambia = async (k: keyof PrefNotifiche, v: boolean) => {
+    if (!sub || !pref) return;
+    try {
+      await iscrivi({ ...pref, [k]: v }, sub);
+    } catch (e) {
+      setEsito('❌ ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+  const prova = async () => {
+    if (!sub) return;
+    try {
+      await waNotifiche(imp, 'prova', { endpoint: sub.endpoint });
+      setEsito('Inviata: deve arrivare tra pochi secondi (anche se chiudi HUB).');
+    } catch (e) {
+      setEsito('❌ ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+  const spegni = async () => {
+    if (!sub) return;
+    try {
+      await waNotifiche(imp, 'disiscrivi', { endpoint: sub.endpoint });
+      await sub.unsubscribe();
+      setSub(null);
+      setPref(null);
+      avvisa('Notifiche spente su questo dispositivo');
+    } catch (e) {
+      setEsito('❌ ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
+  return (
+    <>
+      <p className="nota">Il Mac mini ti avvisa quando arriva un messaggio, anche con HUB chiuso. Nella notifica c’è solo chi ha scritto e su quale numero, mai il testo.</p>
+      {!sub || !pref ? (
+        <div className="riga">
+          <button className="primario" disabled={lavoro} onClick={attiva}>🔔 Attiva notifiche</button>
+        </div>
+      ) : (
+        <>
+          {(['personale', 'business', 'gruppi'] as (keyof PrefNotifiche)[]).map((k) => (
+            <label key={k} className="interruttore">
+              <input type="checkbox" checked={pref[k]} onChange={(e) => cambia(k, e.target.checked)} /> {k === 'personale' ? 'Personale' : k === 'business' ? 'Business' : 'Anche dai gruppi'}
+            </label>
+          ))}
+          <div className="riga">
+            <button className="secondario" onClick={prova}>Prova</button>
+            <button className="secondario" onClick={spegni}>Spegni notifiche</button>
+          </div>
+        </>
+      )}
+      {esito && <p className="nota" role="status">{esito}</p>}
     </>
   );
 }

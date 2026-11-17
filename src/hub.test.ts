@@ -362,3 +362,10 @@ describe('avviso messaggi nuovi (solo sul dispositivo)', () => {
     expect(nuovo({ inizio: {}, chat: {} }, 'business', c('a', 1500))).toBe(false); // linea mai vista: niente pallini
   });
 });
+
+import { chiaveInByte } from './wa';
+describe('notifiche in HUB', () => {
+  it('chiave VAPID base64url → byte', () => {
+    expect(Array.from(chiaveInByte('AQID_-8'))).toEqual([1, 2, 3, 255, 239]);
+  });
+});

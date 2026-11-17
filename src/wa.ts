@@ -105,6 +105,22 @@ export const waInvia = (i: Impostazioni, jid: string, testo: string, linea: Line
 /** Scollega davvero il numero dal Mini (sparisce anche da «Dispositivi collegati» sul telefono). */
 export const waScollega = (i: Impostazioni, linea: Linea, fetchFn?: typeof fetch) =>
   chiama<{ ok: boolean; stato: string }>(i, conLinea('/scollega', linea), { metodo: 'POST', fetchFn });
+/** Notifiche (Web Push via Apple): chiave pubblica del Mini e iscrizione di questo dispositivo. */
+export interface PrefNotifiche {
+  personale: boolean;
+  business: boolean;
+  gruppi: boolean;
+}
+export const waChiaveNotifiche = (i: Impostazioni, fetchFn?: typeof fetch) => chiama<{ publicKey: string }>(i, '/notifiche/chiave', { fetchFn });
+export const waNotifiche = <T,>(i: Impostazioni, azione: 'iscrivi' | 'disiscrivi' | 'stato' | 'prova', corpo: unknown, fetchFn?: typeof fetch) =>
+  chiama<T>(i, '/notifiche/' + azione, { metodo: 'POST', corpo, fetchFn });
+/** La chiave VAPID arriva in base64url: il browser la vuole in byte. */
+export function chiaveInByte(b64: string): Uint8Array {
+  const t = (b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(t);
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+
 /** Pagina del Mini con il QR per collegare un numero. */
 export const paginaCollega = (i: Impostazioni, linea: Linea) => pulisci(i.waUrl || WA_MINI) + conLinea('/collega', linea);
 
