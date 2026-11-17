@@ -868,9 +868,12 @@ function StatoWa({ stato, setStato, avvisa }: { stato: Stato; setStato: React.Di
 function Notifiche({ stato, avvisa }: { stato: Stato; avvisa: (t: string) => void }) {
   const imp = stato.impostazioni;
   const supporto = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  // Solo iPhone e iPad vogliono HUB aperto dall'icona; sul computer (Edge, Chrome) basta il browser.
+  const ios = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
   const icona =
-    typeof window !== 'undefined' &&
-    (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true);
+    !ios ||
+    (typeof window !== 'undefined' &&
+      (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true));
   const [sub, setSub] = useState<PushSubscription | null>(null);
   const [pref, setPref] = useState<PrefNotifiche | null>(null);
   const [esito, setEsito] = useState('');
@@ -947,7 +950,10 @@ function Notifiche({ stato, avvisa }: { stato: Stato; avvisa: (t: string) => voi
 
   return (
     <>
-      <p className="nota">Il Mac mini ti avvisa quando arriva un messaggio, anche con HUB chiuso. Nella notifica c’è solo chi ha scritto e su quale numero, mai il testo.</p>
+      <p className="nota">
+        Il Mac mini ti avvisa quando arriva un messaggio, anche con HUB chiuso{ios ? '' : ' (sul computer: basta che il browser sia aperto)'}. Nella notifica c’è solo chi ha scritto e su quale numero, mai il
+        testo. Ogni dispositivo va attivato a parte.
+      </p>
       {!sub || !pref ? (
         <div className="riga">
           <button className="primario" disabled={lavoro} onClick={attiva}>🔔 Attiva notifiche</button>
@@ -1145,7 +1151,7 @@ function Anteprima(props: {
               </div>
             )}
             {erroreInvio && <div className="errore">{erroreInvio}</div>}
-            <p className="ricorda">Parte dal tuo WhatsApp Personale, solo quando confermi.</p>
+            <p className="ricorda">Parte dal tuo {props.app} ({props.nomeProfilo}), solo quando confermi.</p>
           </>
         ) : (
           <>
