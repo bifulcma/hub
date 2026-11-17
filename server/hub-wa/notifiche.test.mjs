@@ -34,6 +34,7 @@ describe('notifiche', () => {
     a.avanti(3 * 60 * 1000);
     expect(await a.n.nuovoMessaggio({ linea: 'business', jid: 'x', nomeChat: 'X' })).toBe(1);
     expect(await a.n.nuovoMessaggio({ linea: 'personale', jid: 'y', nomeChat: 'Y' })).toBe(2);
+    expect(a.invia.mock.calls[0][2]).toEqual({ TTL: 3600 }); // niente topic: Apple lo rifiuta
     const dati = JSON.parse(a.invia.mock.calls[0][1]);
     expect(dati).toMatchObject({ titolo: 'X · Business', url: './#/chat?p=business' });
   });

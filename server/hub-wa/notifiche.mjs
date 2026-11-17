@@ -51,7 +51,9 @@ export function creaNotifiche({ invia, leggi, scrivi, ora = () => Date.now(), lo
     let n = 0;
     for (const x of destinatari) {
       try {
-        await invia(x.sub, JSON.stringify(dati), { TTL: 3600, urgency: 'normal', topic: chiave.replace(/[^A-Za-z0-9_-]/g, '').slice(-32) || 'hub' });
+        // Niente «topic»: Apple lo rifiuta (400 BadWebPushTopic, provato il 17/11/2026). Il raggruppamento
+        // per chat lo fa già il «tag» della notifica sul dispositivo.
+        await invia(x.sub, JSON.stringify(dati), { TTL: 3600 });
         n++;
       } catch (e) {
         if (e?.statusCode === 404 || e?.statusCode === 410) disiscrivi(x.sub.endpoint); // dispositivo non più iscritto
