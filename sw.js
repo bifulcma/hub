@@ -1,5 +1,5 @@
 // HUB service worker: guscio offline + aggiornamento con toast. Non tocca i dati (localStorage).
-const VERSION = 'hub-0.3.4';
+const VERSION = 'hub-0.3.5';
 const GUSCIO = ['./', './index.html', './manifest.webmanifest', './icona.svg', './icona-180.png', './icona-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -25,5 +25,35 @@ self.addEventListener('fetch', (e) => {
       if (r.ok) { const copia = r.clone(); caches.open(VERSION).then((c) => c.put(e.request, copia)); }
       return r;
     })),
+  );
+});
+
+// Notifiche (arrivano dal Mac mini tramite Apple). Il contenuto non ha mai il testo del messaggio.
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) {}
+  e.waitUntil(
+    self.registration.showNotification(d.titolo || 'HUB', {
+      body: d.corpo || 'Nuovo messaggio',
+      tag: d.tag || 'hub',
+      data: { url: d.url || './#/chat' },
+      icon: './icona-180.png',
+      badge: './icona-180.png',
+    }),
+  );
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || './#/chat', self.registration.scope).href;
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+      for (const c of cs) {
+        if ('focus' in c) {
+          if ('navigate' in c) c.navigate(url).catch(() => {});
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
   );
 });
