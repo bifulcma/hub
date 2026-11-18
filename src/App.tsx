@@ -865,7 +865,38 @@ function StatoWa({ stato, setStato, avvisa }: { stato: Stato; setStato: React.Di
         <button className="secondario" onClick={() => { if (confirm('Scollegare WhatsApp da HUB su questo dispositivo?')) { setStato((s) => ({ ...s, impostazioni: { ...s.impostazioni, waUrl: '', waToken: '' } })); avvisa('Scollegato'); } }}>Scollega</button>
         <span data-testid="esito-wa">{esito}</span>
       </div>
+      <RifaiQr imp={imp} linea="personale" avvisa={avvisa} />
     </>
+  );
+}
+
+// Rifare il QR (per riavere storico e nomi): stacca il numero dal Mini e dal telefono, poi apre la pagina del QR.
+function RifaiQr({ imp, linea, avvisa, dopo }: { imp: Stato['impostazioni']; linea: Linea; avvisa: (t: string) => void; dopo?: () => void }) {
+  const [pronto, setPronto] = useState(false);
+  const [lavoro, setLavoro] = useState(false);
+  const nome = linea === 'business' ? 'Business' : 'Personale';
+  const via = async () => {
+    if (!confirm(`Rifare il QR del ${nome}? HUB si stacca da WhatsApp ${nome} (anche sul telefono); poi inquadri il QR nuovo e tornano storico e nomi.`)) return;
+    setLavoro(true);
+    try {
+      await waScollega(imp, linea);
+      setPronto(true);
+      avvisa(`${nome} staccato: ora apri la pagina del QR`);
+      dopo?.();
+    } catch (e) {
+      avvisa('❌ ' + (e instanceof Error ? e.message : String(e)));
+    }
+    setLavoro(false);
+  };
+  return pronto ? (
+    <p className="nota">
+      Ora apri su un <b>altro schermo</b> (iPad o computer):{' '}
+      <a href={paginaCollega(imp, linea)} target="_blank" rel="noreferrer">pagina del QR {nome}</a>, tocca «Mostra il QR» e inquadralo con {linea === 'business' ? 'WhatsApp Business' : 'WhatsApp'} → Dispositivi collegati → Collega un dispositivo.
+    </p>
+  ) : (
+    <div className="riga">
+      <button className="secondario" disabled={lavoro} onClick={via}>Rifai il QR {nome}</button>
+    </div>
   );
 }
 
@@ -1023,12 +1054,15 @@ function StatoBusiness({ stato, avvisa }: { stato: Stato; avvisa: (t: string) =>
       <p className="nota">Collegamento non ufficiale: WhatsApp potrebbe bloccare il numero. HUB invia solo dopo «Sì, invia», solo a chi ti ha già scritto, con almeno 15 secondi tra un invio e l’altro.</p>
       <div className="riga">
         {collegato ? (
-          <button className="secondario" disabled={lavoro} onClick={scollega}>Scollega Business</button>
+          <>
+            <button className="secondario" disabled={lavoro} onClick={scollega}>Scollega Business</button>
+          </>
         ) : (
           <a className="bottone primario" href={paginaCollega(imp, 'business')} target="_blank" rel="noreferrer">Collega Business (QR)</a>
         )}
         <button className="secondario" onClick={leggi}>Aggiorna</button>
       </div>
+      {collegato && <RifaiQr imp={imp} linea="business" avvisa={avvisa} dopo={leggi} />}
       {errore && <p className="nota" role="alert">{errore}</p>}
     </>
   );

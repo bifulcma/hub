@@ -1,5 +1,5 @@
 // HUB service worker: guscio offline + aggiornamento con toast. Non tocca i dati (localStorage).
-const VERSION = 'hub-0.3.7';
+const VERSION = 'hub-0.3.8';
 const GUSCIO = ['./', './index.html', './manifest.webmanifest', './icona.svg', './icona-180.png', './icona-512.png'];
 
 self.addEventListener('install', (e) => {
