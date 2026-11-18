@@ -1,4 +1,4 @@
-// Collegamento con hub-wa sul Mac mini: chat WhatsApp (solo Personale) e IA locale (Nemotron sul Mac Studio).
+// Collegamento con hub-wa sul Mac mini: chat WhatsApp (Personale e Business) e IA locale sul Mac Studio (modello scelto sul Mini, oggi Gemma).
 import { askBridge } from './ponte';
 import { askConRiprova } from './ai';
 import type { Impostazioni } from './store';
@@ -124,7 +124,7 @@ export function chiaveInByte(b64: string): Uint8Array {
 /** Pagina del Mini con il QR per collegare un numero. */
 export const paginaCollega = (i: Impostazioni, linea: Linea) => pulisci(i.waUrl || WA_MINI) + conLinea('/collega', linea);
 
-/** Chiede all'IA scelta: Nemotron locale (via Mini) oppure Claude (via ponte dello Studio). */
+/** Chiede all'IA scelta: IA locale (via Mini → Ollama sullo Studio) oppure Claude (via ponte dello Studio). */
 export async function chiediIA(
   i: Impostazioni,
   o: { system: string; prompt: string; json?: boolean; signal?: AbortSignal },
@@ -142,7 +142,7 @@ export function usaNemotron(i: Impostazioni): boolean {
 }
 
 export function nomeIA(i: Impostazioni): string {
-  return usaNemotron(i) ? 'Nemotron (locale, privato)' : 'Claude';
+  return usaNemotron(i) ? 'IA locale (privata)' : 'Claude';
 }
 
 /** IA disponibile? (altrimenti modalità prova) */

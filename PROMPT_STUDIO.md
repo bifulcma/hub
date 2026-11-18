@@ -51,6 +51,8 @@ File principali:
 
 - 17/11: avviso messaggi nuovi dentro HUB (0.3.4, solo sul dispositivo) e **notifiche Web Push** (0.3.5): Marco ha le notifiche di WhatsApp spente. File sul Mini: `vapid.json`, `notifiche.json` (0600, solo iscrizioni). Dipendenza `web-push` in `server/hub-wa/package.json` (dopo modifiche: copia package.json e `npm install --omit=dev` sul Mini). Nella notifica mai il testo. Da provare sui dispositivi veri.
 
+- 18/11: IA locale = **Gemma** (`gemma4-64k:latest` su Ollama dello Studio), scelta di Marco; nel plist del Mini `HUB_WA_MODEL=gemma4-64k:latest` (messo da qualcun altro il 18/11 alle 8:36 con riavvio SENZA passaggio di memoria: chat perse). Default nel codice ora Gemma. In HUB le scritte dicono «IA locale» e Impostazioni mostra il modello. Per le chat di HUB niente IA cloud (decisione di Marco: privacy di chi gli scrive).
+
 ## Possibili prossimi passi (chiedi a Marco quale, proponendo il primo)
 1. Notifica/contatore di messaggi nuovi nella scheda Chat (solo dentro l'app, niente push).
 2. Nella Chat: messaggi pronti del profilo inseribili con un tocco.

@@ -232,7 +232,7 @@ describe('wa (Mac mini)', () => {
   it('iaPronta e nomeIA', () => {
     expect(iaPronta({ ...imp, waToken: '' })).toBe(false);
     expect(iaPronta(imp)).toBe(true);
-    expect(nomeIA(imp)).toMatch(/Nemotron/);
+    expect(nomeIA(imp)).toMatch(/IA locale/);
   });
   it('Business: ogni chiamata porta linea=business, il Personale resta come prima', async () => {
     const f = vi.fn(async () => new Response(JSON.stringify({ stato: 'collegato', chats: [], ok: true }), { status: 200 }));

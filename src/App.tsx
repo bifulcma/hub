@@ -742,6 +742,12 @@ function Pronti({ stato, setStato, apri }: { stato: Stato; setStato: React.Dispa
 // ---------------------------------------------------------------- Impostazioni
 function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: React.Dispatch<React.SetStateAction<Stato>>; avvisa: (t: string) => void }) {
   const [prova, setProva] = useState('');
+  // Modello locale scelto sul Mini (oggi Gemma): lo mostriamo, così si sa chi risponde.
+  const [modello, setModello] = useState('');
+  useEffect(() => {
+    if (waConfigurato(stato.impostazioni)) waSalute(stato.impostazioni).then((r) => setModello(r.modello || '')).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stato.impostazioni.waUrl, stato.impostazioni.waToken]);
   const p = stato.profili[stato.attivo];
   const setProfilo = (campo: string, valore: string) =>
     setStato((s) => ({ ...s, profili: { ...s.profili, [s.attivo]: { ...s.profili[s.attivo], [campo]: valore } } }));
@@ -798,14 +804,14 @@ function Impostazioni({ stato, setStato, avvisa }: { stato: Stato; setStato: Rea
 
       <h2>IA</h2>
       <div className="segmento scelta-ia" role="radiogroup" aria-label="IA">
-        <button role="radio" aria-checked={(stato.impostazioni.ia || 'nemotron') === 'nemotron'} className={`seg ${(stato.impostazioni.ia || 'nemotron') === 'nemotron' ? 'attivo scelta' : ''}`} onClick={() => setStato((s) => ({ ...s, impostazioni: { ...s.impostazioni, ia: 'nemotron' } }))}>Nemotron locale</button>
+        <button role="radio" aria-checked={(stato.impostazioni.ia || 'nemotron') === 'nemotron'} className={`seg ${(stato.impostazioni.ia || 'nemotron') === 'nemotron' ? 'attivo scelta' : ''}`} onClick={() => setStato((s) => ({ ...s, impostazioni: { ...s.impostazioni, ia: 'nemotron' } }))}>IA locale</button>
         <button role="radio" aria-checked={stato.impostazioni.ia === 'claude'} className={`seg ${stato.impostazioni.ia === 'claude' ? 'attivo scelta' : ''}`} onClick={() => setStato((s) => ({ ...s, impostazioni: { ...s.impostazioni, ia: 'claude' } }))}>Claude</button>
       </div>
       <p className="nota">
         {(stato.impostazioni.ia || 'nemotron') === 'nemotron'
           ? waConfigurato(stato.impostazioni)
-            ? 'Nemotron gira sul tuo Mac Studio: i messaggi non escono di casa.'
-            : 'Nemotron passa dal Mac mini: collega prima WhatsApp qui sotto (oppure scegli Claude).'
+            ? `L’IA locale gira sul tuo Mac Studio${modello ? ` (modello: ${modello.replace(/:latest$/, '')})` : ''}: i messaggi non escono di casa.`
+            : 'L’IA locale passa dal Mac mini: collega prima WhatsApp qui sotto (oppure scegli Claude).'
           : 'Claude risponde dai server di Anthropic, tramite il ponte del Mac Studio.'}
       </p>
 

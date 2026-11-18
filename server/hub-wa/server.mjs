@@ -23,7 +23,7 @@ const PORT = Number(process.env.HUB_WA_PORT || 8791);
 const ORIGINE = 'https://bifulcma.github.io';
 const URL_PUBBLICO = process.env.HUB_WA_URL || 'https://mac-mini-von-marco.tail623d1f.ts.net:8445';
 const OLLAMA = process.env.HUB_WA_OLLAMA || 'http://100.87.233.111:11434';
-const MODELLO = process.env.HUB_WA_MODEL || 'nemotron35:latest';
+const MODELLO = process.env.HUB_WA_MODEL || 'gemma4-64k:latest'; // scelta di Marco del 18/11/2026 (prima nemotron35)
 
 mkdirSync(BASE, { recursive: true, mode: 0o700 });
 
