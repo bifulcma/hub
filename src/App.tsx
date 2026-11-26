@@ -946,7 +946,7 @@ function Notifiche({ stato, avvisa }: { stato: Stato; avvisa: (t: string) => voi
       const { publicKey } = await waChiaveNotifiche(imp);
       const reg = await navigator.serviceWorker.ready;
       const s = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chiaveInByte(publicKey) as BufferSource }));
-      await iscrivi(pref || { personale: true, business: true, gruppi: true }, s);
+      await iscrivi(pref || { personale: true, business: true, gruppi: true, silenzio: true }, s);
       setSub(s);
       avvisa('🔔 Notifiche attive su questo dispositivo');
     } catch (e) {
@@ -997,11 +997,13 @@ function Notifiche({ stato, avvisa }: { stato: Stato; avvisa: (t: string) => voi
         </div>
       ) : (
         <>
-          {(['personale', 'business', 'gruppi'] as (keyof PrefNotifiche)[]).map((k) => (
+          {(['personale', 'business', 'gruppi', 'silenzio'] as (keyof PrefNotifiche)[]).map((k) => (
             <label key={k} className="interruttore">
-              <input type="checkbox" checked={pref[k]} onChange={(e) => cambia(k, e.target.checked)} /> {k === 'personale' ? 'Personale' : k === 'business' ? 'Business' : 'Anche dai gruppi'}
+              <input type="checkbox" checked={pref[k] ?? true} onChange={(e) => cambia(k, e.target.checked)} />{' '}
+              {k === 'personale' ? 'Personale' : k === 'business' ? 'Business' : k === 'gruppi' ? 'Anche dai gruppi' : 'Silenzio di notte (22–7, alle 7 un riassunto)'}
             </label>
           ))}
+          <p className="nota">Per non disturbare: la prima notifica arriva subito, poi per 10 minuti niente e alla fine un solo riassunto.</p>
           <div className="riga">
             <button className="secondario" onClick={prova}>Prova</button>
             <button className="secondario" onClick={spegni}>Spegni notifiche</button>

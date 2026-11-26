@@ -110,6 +110,8 @@ export interface PrefNotifiche {
   personale: boolean;
   business: boolean;
   gruppi: boolean;
+  /** dalle 22 alle 7 niente notifiche, alle 7 un riassunto */
+  silenzio: boolean;
 }
 export const waChiaveNotifiche = (i: Impostazioni, fetchFn?: typeof fetch) => chiama<{ publicKey: string }>(i, '/notifiche/chiave', { fetchFn });
 export const waNotifiche = <T,>(i: Impostazioni, azione: 'iscrivi' | 'disiscrivi' | 'stato' | 'prova', corpo: unknown, fetchFn?: typeof fetch) =>
