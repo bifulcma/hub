@@ -446,14 +446,11 @@ const server = http.createServer(async (req, res) => {
     // Aggiornamento senza perdere le chat: il servizio vecchio consegna la memoria, il nuovo la riprende.
     // Passa da RAM a RAM (in una variabile della shell sul Mini), mai su disco.
     if (p === '/_memoria' && req.method === 'GET') {
-      const d = Object.fromEntries(Object.values(linee).map((x) => [x.id, x.mem.esporta()]));
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      return res.end(JSON.stringify(d, BufferJSON.replacer));
+      return res.end(memoriaInTesto());
     }
     if (p === '/_memoria' && req.method === 'POST') {
-      const d = await corpo(req, 200 * 1024 * 1024);
-      const n = Object.fromEntries(Object.values(linee).map((x) => [x.id, x.mem.importa(d[x.id])]));
-      log('memoria ripresa dal servizio precedente: ' + JSON.stringify(n));
+      const n = riprendi(await corpo(req, 200 * 1024 * 1024), 'dal servizio precedente');
       return invia(res, 200, { ok: true, chat: n });
     }
 
@@ -521,8 +518,44 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => log(`in ascolto su 127.0.0.1:${PORT}`));
-// Personale sempre; Business solo se era già collegato (niente QR a vuoto).
-for (const L of Object.values(linee)) {
-  if (L.avvioSempre || existsSync(path.join(L.session, 'creds.json'))) avvia(L).catch((e) => log('avvio fallito ' + L.id + ' ' + e.message));
+// ------------------------------------------------------------------ Custode: le chat sopravvivono ai riavvii
+// Quando il servizio si spegne (aggiornamento, configurazione cambiata, chiunque lo riavvii) consegna la
+// memoria al custode (custode.mjs, sempre acceso, solo RAM su 127.0.0.1); quando riparte se la riprende.
+const CUSTODE = `http://127.0.0.1:${Number(process.env.HUB_WA_CUSTODE_PORT || 8792)}`;
+const memoriaInTesto = () => JSON.stringify(Object.fromEntries(Object.values(linee).map((x) => [x.id, x.mem.esporta()])), BufferJSON.replacer);
+function riprendi(d, da) {
+  const n = Object.fromEntries(Object.values(linee).map((x) => [x.id, x.mem.importa(d[x.id])]));
+  log('memoria ripresa ' + da + ': ' + JSON.stringify(n));
+  return n;
 }
+async function dalCustode() {
+  try {
+    const r = await fetch(CUSTODE + '/ritira', { headers: { Authorization: 'Bearer ' + TOKEN }, signal: AbortSignal.timeout(5000) });
+    if (r.status !== 200) return;
+    riprendi(JSON.parse(await r.text(), BufferJSON.reviver), 'dal custode');
+  } catch (e) {
+    log('custode non raggiungibile all’avvio: ' + (e?.message || e));
+  }
+}
+let chiudendo = false;
+async function chiudi(segnale) {
+  if (chiudendo) return;
+  chiudendo = true;
+  try {
+    const r = await fetch(CUSTODE + '/deposita', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, body: memoriaInTesto(), signal: AbortSignal.timeout(8000) });
+    log('spegnimento (' + segnale + '): memoria consegnata al custode (' + (r.ok ? 'ok' : r.status) + ')');
+  } catch (e) {
+    log('spegnimento (' + segnale + '): custode non raggiungibile, chat perse: ' + (e?.message || e));
+  }
+  process.exit(0);
+}
+process.on('SIGTERM', () => chiudi('SIGTERM'));
+process.on('SIGINT', () => chiudi('SIGINT'));
+
+server.listen(PORT, '127.0.0.1', () => log(`in ascolto su 127.0.0.1:${PORT}`));
+// Prima le chat dal custode, poi i collegamenti. Personale sempre; Business solo se era già collegato.
+dalCustode().finally(() => {
+  for (const L of Object.values(linee)) {
+    if (L.avvioSempre || existsSync(path.join(L.session, 'creds.json'))) avvia(L).catch((e) => log('avvio fallito ' + L.id + ' ' + e.message));
+  }
+});
