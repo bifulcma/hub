@@ -53,6 +53,9 @@ File principali:
 
 - 18/11: IA locale = **Gemma** (`gemma4-64k:latest` su Ollama dello Studio), scelta di Marco; nel plist del Mini `HUB_WA_MODEL=gemma4-64k:latest` (messo da qualcun altro il 18/11 alle 8:36 con riavvio SENZA passaggio di memoria: chat perse). Default nel codice ora Gemma. In HUB le scritte dicono «IA locale» e Impostazioni mostra il modello. Per le chat di HUB niente IA cloud (decisione di Marco: privacy di chi gli scrive).
 
+- 26/11 sicurezza: password dalla pagina /collega solo in finestra di 10 min (dopo QR o «Collega un nuovo dispositivo»); pulsanti della pagina solo dalla pagina (X-HUB-Pagina + Sec-Fetch-Site). Regola Tailscale proposta in `docs/tailscale-regola-hub.hujson` (la applica Marco dal pannello).
+- 26/11 **custode** (`custode.mjs`, LaunchAgent `com.marco.hub-wa-custode`, 127.0.0.1:8792, solo RAM): hub-wa gli consegna le chat su SIGTERM e se le riprende all'avvio. Provato sul Mini con un riavvio semplice. Il 24/11 qualcuno aveva cambiato il plist (modello `inkling2-mini-64k:latest`, locale, più veloce: tenuto) e riavviato senza passaggio → chat perse; col custode non succede più (salvo spegnimento del Mini). Aggiornare: copiare i file e `launchctl kickstart -k` basta.
+
 ## Possibili prossimi passi (chiedi a Marco quale, proponendo il primo)
 1. Notifica/contatore di messaggi nuovi nella scheda Chat (solo dentro l'app, niente push).
 2. Nella Chat: messaggi pronti del profilo inseribili con un tocco.
