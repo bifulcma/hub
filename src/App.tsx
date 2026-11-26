@@ -1099,7 +1099,7 @@ function CollegaIncolla({ setStato, avvisa }: { setStato: React.Dispatch<React.S
   };
   return (
     <>
-      <p className="nota">Non collegato. Accendi Tailscale e tocca qui:</p>
+      <p className="nota">Non collegato. Accendi Tailscale e tocca qui. (Per sicurezza, prima apri la pagina «collega» del Mac mini su un altro schermo e tocca «Collega un nuovo dispositivo»: vale 10 minuti.)</p>
       <div className="riga">
         <button className="primario" disabled={provo} onClick={unTocco}>{provo ? 'Collego…' : 'Collega WhatsApp'}</button>
       </div>

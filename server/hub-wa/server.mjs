@@ -14,7 +14,7 @@ import os from 'node:os';
 import { creaMemoria } from './memoria.mjs';
 import { creaNotifiche } from './notifiche.mjs';
 import webpush from 'web-push';
-import { LINEE, dopoChiusura, lineaDa, motivoBlocco } from './linee.mjs';
+import { LINEE, dopoChiusura, lineaDa, motivoBlocco, dallaPagina, finestraAperta, DURATA_FINESTRA_MS } from './linee.mjs';
 
 const BASE = path.join(os.homedir(), '.hermes', 'hub-wa');
 const TOKEN_FILE = path.join(BASE, 'token');
@@ -98,12 +98,17 @@ async function avvia(L) {
     if (u.qr) {
       L.qr = u.qr;
       L.stato = 'qr';
+      L.daQr = true;
     }
     if (u.connection === 'open') {
       L.stato = 'collegato';
       L.qr = '';
       L.numero = (sock.user?.id || '').replace(/:.*@/, '@').replace(/@.*/, '');
       log('collegato ' + L.id);
+      if (L.daQr) {
+        L.daQr = false;
+        apriFinestra('QR inquadrato ' + L.id);
+      }
       // I nomi della rubrica WhatsApp li manda solo al primo collegamento: dopo un riavvio del servizio
       // (memoria solo RAM) li chiediamo di nuovo, una volta per avvio, come fa WhatsApp Web.
       setTimeout(() => {
@@ -348,15 +353,16 @@ function mostra(chiave,html){if(chiave!==ultimo){ultimo=chiave;document.getEleme
 function nuovoQr(){const i=document.getElementById('qr');if(!i)return;const n=new Image();n.onload=()=>{i.src=n.src};n.src='/collega/qr.png'+Q+'&t='+Date.now()}
 let linkAttuale='';
 document.addEventListener('click',(e)=>{const id=e.target&&e.target.id;
-if(id==='nuovo'){e.preventDefault();ultimo='';mostra('attesa','<p>Preparo il QR…</p>');fetch('/collega/nuovo'+Q,{method:'POST'})}
-if(id==='rifai'){e.preventDefault();if(!confirm('Rifare il QR? HUB si stacca da WhatsApp '+(BIZ?'Business':'Personale')+' (anche sul telefono), poi inquadri il QR nuovo e tornano storico e nomi.'))return;ultimo='';mostra('attesa','<p>Stacco e preparo il QR nuovo…</p>');fetch('/collega/rifai'+Q,{method:'POST'})}
+if(id==='nuovo'){e.preventDefault();ultimo='';mostra('attesa','<p>Preparo il QR…</p>');fetch('/collega/nuovo'+Q,{method:'POST',headers:{'X-HUB-Pagina':'1'}})}
+if(id==='rifai'){e.preventDefault();if(!confirm('Rifare il QR? HUB si stacca da WhatsApp '+(BIZ?'Business':'Personale')+' (anche sul telefono), poi inquadri il QR nuovo e tornano storico e nomi.'))return;ultimo='';mostra('attesa','<p>Stacco e preparo il QR nuovo…</p>');fetch('/collega/rifai'+Q,{method:'POST',headers:{'X-HUB-Pagina':'1'}})}
+if(id==='apri'){e.preventDefault();ultimo='';fetch('/collega/apri',{method:'POST',headers:{'X-HUB-Pagina':'1'}})}
 if(id==='copia'){e.preventDefault();const f=()=>{const t=document.getElementById('testo');t.style.display='block';t.value=linkAttuale;t.select();document.getElementById('esito').textContent='Tieni premuto sul testo e scegli Copia.'};
 if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(linkAttuale).then(()=>{document.getElementById('esito').textContent='✅ Link copiato. Ora apri HUB dall’icona → Impostazioni → «Incolla link».'},f)}else f()}});
 const AVVISO_BIZ='<p class=av>Il Business usa un collegamento non ufficiale: WhatsApp potrebbe bloccare il numero. Marco ha scelto di accettare il rischio. HUB invia solo quando tocchi «Sì, invia», solo a chi ti ha già scritto, con almeno 15 secondi tra un invio e l’altro.</p>';
 async function giro(){
 try{const x=await fetch('/collega/stato'+Q,{cache:'no-store'});if(!x.ok)throw new Error('HTTP '+x.status);const r=await x.json();
 if(r.stato==='qr'){mostra('qr',(BIZ?AVVISO_BIZ:'')+'<p>Sul telefono apri '+APP+' → Impostazioni → <b>Dispositivi collegati</b> → <b>Collega un dispositivo</b>, poi inquadra:</p><img id=qr alt="QR">');nuovoQr()}
-else if(r.stato==='collegato'){linkAttuale=r.link;mostra('ok'+r.numero,'<p>✅ WhatsApp '+(BIZ?'Business':'Personale')+' collegato a HUB ('+r.numero+').</p>'+'<p style="margin-top:28px">Vuoi riavere <b>storico e nomi</b>?</p><a class=b id=rifai href="#">Rifai il QR</a>'+(BIZ?'<p>Apri HUB, scegli <b>Business</b> in alto e vai su <b>Chat</b>. Per staccarlo: HUB → Impostazioni → «Scollega Business».</p>':'<p>Ultimo passo, sul dispositivo dove userai HUB (iPad o iPhone).</p><p><b>Se apri HUB dall’icona sulla schermata Home</b>: tocca «Copia link», poi in HUB → Impostazioni → «Incolla link».</p><a class=b id=copia href="#">Copia link</a><p id=esito></p><textarea id=testo readonly style="display:none;width:100%;height:90px;font-size:16px"></textarea><p>Se invece usi HUB nel browser:</p><a class=b href="'+r.link+'">Apri HUB e collega</a><p style="font-size:14px;color:#6b6259">Il link contiene la password: non mandarlo a nessuno.</p>'))}
+else if(r.stato==='collegato'){linkAttuale=r.link;mostra('ok'+r.numero+(r.link?'L':''),'<p>✅ WhatsApp '+(BIZ?'Business':'Personale')+' collegato a HUB ('+r.numero+').</p>'+'<p style="margin-top:28px">Vuoi riavere <b>storico e nomi</b>?</p><a class=b id=rifai href="#">Rifai il QR</a>'+(BIZ?'<p>Apri HUB, scegli <b>Business</b> in alto e vai su <b>Chat</b>. Per staccarlo: HUB → Impostazioni → «Scollega Business».</p>':(r.link?'<p>Per <b>10 minuti</b> ('+Math.ceil(r.finestra/60)+' min rimasti) un tuo dispositivo può collegarsi: in HUB tocca «Collega WhatsApp».</p><p style="font-size:15px">Oppure, se apri HUB dall’icona: «Copia link» e in HUB → Impostazioni → «Incolla link».</p><a class=b id=copia href="#">Copia link</a><p id=esito></p><textarea id=testo readonly style="display:none;width:100%;height:90px;font-size:16px"></textarea><p>Se invece usi HUB nel browser:</p><a class=b href="'+r.link+'">Apri HUB e collega</a><p style="font-size:14px;color:#6b6259">Il link contiene la password: non mandarlo a nessuno.</p>':'<p>Per collegare HUB su un <b>altro dispositivo</b> (nuovo iPhone, iPad, computer):</p><a class=b id=apri href="#">Collega un nuovo dispositivo</a><p style="font-size:14px;color:#6b6259">Per sicurezza la password si consegna solo per 10 minuti dopo questo tocco.</p>')))}
 else if(r.stato==='uscito'){mostra('uscito','<p>WhatsApp ha scollegato HUB.</p><a class=b id=nuovo href="#">Nuovo QR</a>')}
 else if(r.stato==='spento'){mostra('spento',(BIZ?AVVISO_BIZ:'')+'<p>WhatsApp '+(BIZ?'Business':'Personale')+' non è collegato a HUB.</p><a class=b id=nuovo href="#">Mostra il QR</a>')}
 else mostra('st'+r.stato,'<p>Attendo WhatsApp… ('+r.stato+')</p>')}
@@ -364,6 +370,14 @@ catch(e){mostra('err','<p>Non riesco a raggiungere il Mac mini. Controlla che Ta
 setTimeout(giro,2500)}
 giro();
 </script></html>`;
+
+// La password (nel link per HUB) si consegna solo in una finestra di 10 minuti: dopo un QR appena inquadrato
+// o dopo «Collega un nuovo dispositivo» sulla pagina. Il resto del tempo nessuno la riceve dalla pagina.
+let finestraFino = 0;
+const apriFinestra = (perche) => {
+  finestraFino = Date.now() + DURATA_FINESTRA_MS;
+  log('finestra collegamento aperta 10 minuti (' + perche + ')');
+};
 
 const linkHub = () => `${ORIGINE}/hub/#/impostazioni?wa=${encodeURIComponent(URL_PUBBLICO)}&watoken=${TOKEN}`;
 const sintesi = (L) => ({ stato: L.stato, numero: L.numero ? '+' + L.numero : '' });
@@ -376,7 +390,19 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') return invia(res, 204, '');
     // Pagina di collegamento: raggiungibile solo dalla rete Tailscale (Serve) o dal Mini.
     if (p === '/collega') return invia(res, 200, PAGINA_COLLEGA(), 'text/html; charset=utf-8');
-    if (p === '/collega/stato') return invia(res, 200, { ...sintesi(L), link: L.stato === 'collegato' ? linkHub() : '' });
+    if (p === '/collega/stato') {
+      const aperta = finestraAperta(finestraFino);
+      return invia(res, 200, { ...sintesi(L), link: L.stato === 'collegato' && aperta ? linkHub() : '', finestra: aperta ? Math.ceil((finestraFino - Date.now()) / 1000) : 0 });
+    }
+    // Pulsanti della pagina: solo dalla pagina stessa (un altro sito non può premerli di nascosto).
+    if (p.startsWith('/collega/') && req.method === 'POST' && !dallaPagina(req.headers)) {
+      log('pulsante della pagina collega rifiutato (non dalla pagina)');
+      return invia(res, 403, { error: 'Solo dalla pagina «collega».' });
+    }
+    if (p === '/collega/apri' && req.method === 'POST') {
+      apriFinestra('dalla pagina');
+      return invia(res, 200, { ok: true });
+    }
     if (p === '/collega/qr.png') {
       if (L.stato !== 'qr' || !L.qr) return invia(res, 404, '');
       return invia(res, 200, await QRCode.toBuffer(L.qr, { width: 420, margin: 1 }), 'image/png');

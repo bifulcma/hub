@@ -209,6 +209,8 @@ describe('wa (Mac mini)', () => {
     expect((ok.mock.calls[0] as unknown[])[0]).toBe('https://m:8445/collega/stato');
     const qr = vi.fn(async () => new Response(JSON.stringify({ stato: 'qr', link: '' }), { status: 200 }));
     await expect(collegaDalMini('https://m', qr as never)).rejects.toThrow(/QR/);
+    const chiusa = vi.fn(async () => new Response(JSON.stringify({ stato: 'collegato', link: '' }), { status: 200 }));
+    await expect(collegaDalMini('https://m', chiusa as never)).rejects.toThrow(/10 minuti/);
     const giu = vi.fn(async () => { throw new TypeError('Load failed'); });
     await expect(collegaDalMini('https://m', giu as never)).rejects.toThrow(/Tailscale/);
   });

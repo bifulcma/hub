@@ -42,3 +42,18 @@ export function dopoChiusura({ linea, motivo, spegnendo, haCredenziali }) {
   if (!haCredenziali && linea === 'business') return 'spento'; // QR mai inquadrato: niente QR a ripetizione
   return 'riprova';
 }
+
+/**
+ * I pulsanti della pagina /collega (Nuovo QR, Rifai il QR, Collega un nuovo dispositivo) valgono solo se la
+ * richiesta parte dalla pagina stessa: intestazione propria (un altro sito non può aggiungerla senza permesso)
+ * e, se il browser lo dice, «same-origin». Così un sito malevolo non può staccarti WhatsApp.
+ */
+export function dallaPagina(h) {
+  if (h['x-hub-pagina'] !== '1') return false;
+  const sito = h['sec-fetch-site'];
+  return !sito || sito === 'same-origin';
+}
+
+/** Finestra in cui la pagina /collega consegna la password ai dispositivi nuovi (10 minuti). */
+export const DURATA_FINESTRA_MS = 10 * 60 * 1000;
+export const finestraAperta = (fino, ora = Date.now()) => fino > ora;

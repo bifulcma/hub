@@ -194,7 +194,9 @@ export async function collegaDalMini(base = WA_MINI, f: typeof fetch = fetch): P
   const d = (await r.json()) as { stato?: string; link?: string };
   if (d.stato === 'qr') throw new WaErrore('WhatsApp non è ancora collegato al Mac mini: serve inquadrare il QR (pagina «collega»).');
   if (d.stato !== 'collegato') throw new WaErrore('WhatsApp sul Mac mini non è pronto (' + (d.stato || '?') + '). Riprova tra poco.');
-  const wa = leggiCollegamentoDaTesto(d.link || '');
+  if (!d.link)
+    throw new WaErrore('Per sicurezza il Mac mini dà la password solo per 10 minuti: apri la pagina «collega» del Mac mini (iPad o computer), tocca «Collega un nuovo dispositivo» e poi riprova qui.');
+  const wa = leggiCollegamentoDaTesto(d.link);
   if (!wa) throw new WaErrore('Risposta del Mac mini non valida.');
   return wa;
 }

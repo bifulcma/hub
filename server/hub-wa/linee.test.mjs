@@ -50,3 +50,19 @@ describe('dopo la chiusura della connessione', () => {
     expect(dopoChiusura({ linea: 'personale', motivo: 408, spegnendo: false, haCredenziali: false })).toBe('riprova');
   });
 });
+
+import { dallaPagina, finestraAperta } from './linee.mjs';
+describe('sicurezza della pagina collega', () => {
+  it('pulsanti solo dalla pagina stessa', () => {
+    expect(dallaPagina({ 'x-hub-pagina': '1', 'sec-fetch-site': 'same-origin' })).toBe(true);
+    expect(dallaPagina({ 'x-hub-pagina': '1' })).toBe(true); // browser che non lo dice
+    expect(dallaPagina({ 'sec-fetch-site': 'cross-site' })).toBe(false); // sito malevolo
+    expect(dallaPagina({ 'x-hub-pagina': '1', 'sec-fetch-site': 'cross-site' })).toBe(false);
+    expect(dallaPagina({})).toBe(false);
+  });
+  it('la password si dà solo a finestra aperta', () => {
+    expect(finestraAperta(2000, 1000)).toBe(true);
+    expect(finestraAperta(1000, 2000)).toBe(false);
+    expect(finestraAperta(0, 1)).toBe(false);
+  });
+});
