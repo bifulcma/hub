@@ -1,0 +1,32 @@
+// Regola Tailscale per HUB (26/11/2026): la porta di HUB sul Mac mini (8445) la raggiungono SOLO i dispositivi
+// elencati qui sotto. Tra i tuoi dispositivi tutto il resto resta come prima.
+// Si incolla in https://login.tailscale.com/admin/acls → sostituisci SOLO "hosts" e "acls", lascia il resto
+// (per esempio "ssh", "tagOwners", "nodeAttrs") com'è. Un dispositivo NUOVO va aggiunto qui, altrimenti
+// non raggiunge gli altri né HUB.
+{
+  "hosts": {
+    "mini": "100.64.23.105",
+    "studio": "100.87.233.111",
+    "ipad": "100.92.227.54",
+    "iphone-12": "100.66.13.123",
+    "iphone192": "100.103.185.98",
+    "laptop-mb": "100.65.226.119",
+    "mb": "100.116.241.24",
+    "port25": "100.117.34.117",
+    "tab-a9": "100.99.15.56",
+  },
+  "acls": [
+    // 1) I tuoi dispositivi si parlano come prima (tutte le porte), tranne la porta di HUB sul Mac mini.
+    {
+      "action": "accept",
+      "src": ["autogroup:member"],
+      "dst": ["studio:*", "ipad:*", "iphone-12:*", "iphone192:*", "laptop-mb:*", "mb:*", "port25:*", "tab-a9:*", "mini:0-8444", "mini:8446-65535"],
+    },
+    // 2) HUB (porta 8445 del Mac mini) solo da questi dispositivi: togli quelli che non lo usano.
+    {
+      "action": "accept",
+      "src": ["studio", "ipad", "iphone-12", "iphone192", "laptop-mb", "mb", "port25", "tab-a9"],
+      "dst": ["mini:8445"],
+    },
+  ],
+}
